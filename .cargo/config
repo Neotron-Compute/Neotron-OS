@@ -1,0 +1,9 @@
+[target.thumbv7em-none-eabihf]
+runner = 'arm-none-eabi-gdb'
+rustflags = [
+  "-C", "link-arg=-Tneotron-os.x",
+  "-C", "relocation-model=pic",
+]
+
+[build]
+target = "thumbv7em-none-eabihf"

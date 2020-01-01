@@ -1,0 +1,12 @@
+[package]
+name = "neotron_os"
+version = "0.1.0"
+authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>"]
+edition = "2018"
+license = "GPL3"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+neotron_common_bios = { path = "./Neotron-Common-BIOS" }
+panic-halt = "*"

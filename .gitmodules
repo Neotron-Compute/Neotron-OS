@@ -1,0 +1,3 @@
+[submodule "Neotron-Common-BIOS"]
+	path = Neotron-Common-BIOS
+	url = ../Neotron-Common-BIOS.git
