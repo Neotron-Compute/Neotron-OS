@@ -1,0 +1,23 @@
+[package]
+name = "neotron_os"
+version = "0.1.0"
+authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>"]
+edition = "2018"
+description = "The Neotron Operating System"
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/neotron-compute/Neotron-OS"
+
+[[bin]]
+name = "neotron_os"
+test = false
+bench = false
+
+[profile.release]
+lto = true
+debug = true
+codegen-units = 1
+opt-level = "s"
+
+[dependencies.neotron_common_bios]
+path = "./common"
