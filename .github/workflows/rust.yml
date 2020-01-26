@@ -1,0 +1,18 @@
+name: Build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        submodules: true
+    - name: Add Target
+      run: rustup target add thumbv7em-none-eabi
+    - name: Build
+      run: cargo build --verbose --target=thumbv7em-none-eabi
