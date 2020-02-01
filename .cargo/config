@@ -1,8 +1,5 @@
 [target.thumbv7em-none-eabihf]
 runner = 'arm-none-eabi-gdb --command=gdb.cfg -w'
-rustflags = [
-  "-C", "link-arg=-Tneotron-os-26k.ld",
-]
 
 [build]
 target = "thumbv7em-none-eabihf"
