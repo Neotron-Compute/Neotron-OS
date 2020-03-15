@@ -14,23 +14,38 @@ This OS is a work in progress. We intend to support:
 * [ ] Basic networking
 * [ ] Music playback
 * [ ] Various keyboard layouts
+* [ ] Ethernet / WiFi networking
 
-## Build Instructions
+## Build instructions
+
+Your board will need an appropriate Neotron BIOS installed, and you need to have OpenOCD running for your particular board. You also need to set the linker 
+arguments so you link the binary to suit the memory available on your system.
+
+### Build Instructions for the Neotron 340ST
 
 ```
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
 $ git submodule update --init
-$ nano ./Cargo.toml # Edit to use appropriate linker script
-$ cargo build --release
-$ cargo run --release # Fires up GDB to flash the board
+$ RUSTFLAGS="-C link-arg=-Tneotron-os-256k.ld" cargo run --release
 ```
+
+### Build Instructions for the Neotron 32
+
+```
+$ git clone https://github.com/neotron-compute/Neotron-OS.git
+$ cd Neotron-OS
+$ git submodule update --init
+$ RUSTFLAGS="-C link-arg=-Tneotron-os-26k.ld" cargo run --release
+```
+
+TODO: Think of a better way of setting the memory limits for a particular OS build.
 
 ## Changelog
 
 ### Unreleased Changes ([Source](https://github.com/neotron-compute/Neotron-OS/tree/master))
 
-* Basic UART hello on start-up
+* Basic UART hello on start-up on the Neotron 32 and Neotron 340ST
 
 ## Licence
 
