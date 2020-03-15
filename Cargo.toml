@@ -19,5 +19,5 @@ debug = true
 codegen-units = 1
 opt-level = "s"
 
-[dependencies.neotron_common_bios]
+[dependencies.neotron-common-bios]
 path = "./common"
