@@ -1,21 +1,70 @@
 //! # The Neotron Operating System
 //!
 //! This OS is intended to be loaded by a Neotron BIOS.
+//!
+//! Copyright (c) The Neotron Developers, 2020
+//!
+//! Licence: GPL v3 or higher (see ../LICENCE.md)
+
 #![no_std]
 #![no_main]
 
+// Imports
 use core::fmt::Write;
-use neotron_common_bios as common;
+use neotron_common_bios as bios;
 
+// ===========================================================================
+// Global Variables
+// ===========================================================================
+
+/// This tells the BIOS how to start the OS. This must be the first four bytes
+/// of our portion of Flash.
 #[link_section = ".entry_point"]
-#[no_mangle]
 #[used]
-pub static ENTRY_POINT: extern "C" fn(&'static common::Api) -> ! = entry_point;
+pub static ENTRY_POINT_ADDR: extern "C" fn(&'static bios::Api) -> ! = main;
 
 /// The OS version string
-static OS_VERSION: &str = concat!("Neotron OS, version ", env!("CARGO_PKG_VERSION"), "\0");
+const OS_VERSION: &str = concat!("Neotron OS, version ", env!("CARGO_PKG_VERSION"), "-2");
 
-static mut API: Option<&'static common::Api> = None;
+/// We store the API object supplied by the BIOS here
+static mut API: Option<&'static bios::Api> = None;
+
+/// We store our VGA console here.
+static mut VGA_CONSOLE: Option<VgaConsole> = None;
+
+/// We store our VGA console here.
+static mut SERIAL_CONSOLE: Option<SerialConsole> = None;
+
+// ===========================================================================
+// Macros
+// ===========================================================================
+
+/// Prints to the screen
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {
+        if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+            write!(console, $($arg)*).unwrap();
+        }
+        if let Some(ref mut console) = unsafe { &mut SERIAL_CONSOLE } {
+            write!(console, $($arg)*).unwrap();
+        }
+    };
+}
+
+/// Prints to the screen and puts a new-line on the end
+#[macro_export]
+macro_rules! println {
+    () => (print!("\n"));
+    ($($arg:tt)*) => {
+        print!($($arg)*);
+        print!("\n");
+    };
+}
+
+// ===========================================================================
+// Local types
+// ===========================================================================
 
 #[derive(Debug)]
 struct VgaConsole {
@@ -24,21 +73,6 @@ struct VgaConsole {
     height: u8,
     row: u8,
     col: u8,
-}
-
-struct SerialConsole;
-
-impl core::fmt::Write for SerialConsole {
-    fn write_str(&mut self, data: &str) -> core::fmt::Result {
-        if let Some(api) = unsafe { API } {
-            let _res = (api.serial_write)(
-                0,
-                common::ApiByteSlice::new(data.as_bytes()),
-                common::Option::None,
-            );
-        }
-        Ok(())
-    }
 }
 
 impl VgaConsole {
@@ -130,39 +164,145 @@ impl core::fmt::Write for VgaConsole {
     }
 }
 
-#[no_mangle]
-extern "C" fn entry_point(api: &'static common::Api) -> ! {
-    unsafe {
-        API = Some(api);
-    }
-    let mut addr: *mut u8 = core::ptr::null_mut();
-    let mut width = 0;
-    let mut height = 0;
-    (api.video_memory_info_get)(&mut addr, &mut width, &mut height);
-    let mut vga = VgaConsole {
-        addr,
-        width,
-        height,
-        row: 0,
-        col: 0,
-    };
-    vga.find_start_row();
-    writeln!(vga, "{}", OS_VERSION).unwrap();
-    writeln!(vga, "BIOS Version: {}", (api.bios_version_get)()).unwrap();
-    writeln!(vga, "BIOS API Version: {}", (api.api_version_get)()).unwrap();
-    loop {
-        for _ in 0..1_000_000 {
-            let _ = (api.api_version_get)();
+/// Represents the serial port we can use as a text input/output device.
+struct SerialConsole(u8);
+
+impl core::fmt::Write for SerialConsole {
+    fn write_str(&mut self, data: &str) -> core::fmt::Result {
+        if let Some(api) = unsafe { API } {
+            (api.serial_write)(
+                // Which port
+                self.0,
+                // Data
+                bios::ApiByteSlice::new(data.as_bytes()),
+                // No timeout
+                bios::Option::None,
+            )
+            .unwrap();
         }
-        writeln!(vga, "tick...").unwrap();
+        Ok(())
     }
 }
 
+// ===========================================================================
+// Private functions
+// ===========================================================================
+
+/// Initialise our global variables - the BIOS will not have done this for us
+/// (as it doesn't know where they are).
+unsafe fn start_up_init() {
+    extern "C" {
+
+        // These symbols come from `link.x`
+        static mut __sbss: u32;
+        static mut __ebss: u32;
+
+        static mut __sdata: u32;
+        static mut __edata: u32;
+        static __sidata: u32;
+    }
+
+    r0::zero_bss(&mut __sbss, &mut __ebss);
+    r0::init_data(&mut __sdata, &mut __edata, &__sidata);
+}
+
+struct Config {
+    vga_console: bool,
+    serial_console: bool,
+}
+
+impl Config {
+    /// Create a new default Config object
+    ///
+    /// TODO: We should load from EEPROM / RTC SRAM here.
+    fn new() -> Config {
+        Config {
+            vga_console: true,
+            serial_console: true,
+        }
+    }
+
+    /// Should this system use the VGA console?
+    fn has_vga_console(&self) -> bool {
+        self.vga_console
+    }
+
+    /// Should this system use the UART console?
+    fn has_serial_console(&self) -> Option<(u8, bios::serial::Config)> {
+        if self.serial_console {
+            Some((
+                0,
+                bios::serial::Config {
+                    data_rate_bps: 115200,
+                    data_bits: bios::serial::DataBits::Eight,
+                    stop_bits: bios::serial::StopBits::One,
+                    parity: bios::serial::Parity::None,
+                    handshaking: bios::serial::Handshaking::None,
+                },
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+// ===========================================================================
+// Public functions / impl for public types
+// ===========================================================================
+
+/// This is the function the BIOS calls. This is because we store the address
+/// of this function in the ENTRY_POINT_ADDR variable.
+extern "C" fn main(api: &'static bios::Api) -> ! {
+    unsafe {
+        start_up_init();
+        API = Some(api);
+    }
+
+    let config = Config::new();
+
+    if config.has_vga_console() {
+        let mut addr: *mut u8 = core::ptr::null_mut();
+        let mut width = 0;
+        let mut height = 0;
+        (api.video_memory_info_get)(&mut addr, &mut width, &mut height);
+        if addr != core::ptr::null_mut() {
+            let mut vga = VgaConsole {
+                addr,
+                width,
+                height,
+                row: 0,
+                col: 0,
+            };
+            vga.find_start_row();
+            unsafe {
+                VGA_CONSOLE = Some(vga);
+            }
+            println!("Configured VGA console");
+        }
+    }
+
+    if let Some((idx, serial_config)) = config.has_serial_console() {
+        let _ignored = (api.serial_configure)(idx, serial_config);
+        unsafe { SERIAL_CONSOLE = Some(SerialConsole(idx)) };
+        println!("Configured Serial console on Serial {}", idx);
+    }
+
+    // Now we can call println!
+    println!("Welcome to {}!", OS_VERSION);
+    panic!("Testing a panic...");
+}
+
+/// Called when we have a panic.
 #[inline(never)]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    println!("PANIC!\n{:#?}", info);
     use core::sync::atomic::{self, Ordering};
     loop {
         atomic::compiler_fence(Ordering::SeqCst);
     }
 }
+
+// ===========================================================================
+// End of file
+// ===========================================================================
