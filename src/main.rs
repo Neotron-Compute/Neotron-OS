@@ -12,6 +12,7 @@
 // Imports
 use core::fmt::Write;
 use neotron_common_bios as bios;
+use serde::{Deserialize, Serialize};
 
 // ===========================================================================
 // Global Variables
@@ -184,6 +185,75 @@ impl core::fmt::Write for SerialConsole {
     }
 }
 
+/// Represents our configuration information that we ask the BIOS to serialise
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    vga_console_on: bool,
+    serial_console_on: bool,
+    serial_baud: u32,
+}
+
+impl Config {
+    fn load() -> Result<Config, &'static str> {
+        if let Some(api) = unsafe { API } {
+            let mut buffer = [0u8; 64];
+            match (api.configuration_get)(bios::ApiBuffer::new(&mut buffer)) {
+                bios::Result::Ok(n) => {
+                    postcard::from_bytes(&buffer[0..n]).map_err(|_e| "Failed to parse config")
+                }
+                bios::Result::Err(_e) => Err("Failed to load config"),
+            }
+        } else {
+            Err("No API available?!")
+        }
+    }
+
+    fn save(&self) -> Result<(), &'static str> {
+        if let Some(api) = unsafe { API } {
+            let mut buffer = [0u8; 64];
+            let slice =
+                postcard::to_slice(self, &mut buffer).map_err(|_e| "Failed to parse config")?;
+            (api.configuration_set)(bios::ApiByteSlice::new(slice));
+            Ok(())
+        } else {
+            Err("No API available?!")
+        }
+    }
+
+    /// Should this system use the VGA console?
+    fn has_vga_console(&self) -> bool {
+        self.vga_console_on
+    }
+
+    /// Should this system use the UART console?
+    fn has_serial_console(&self) -> Option<(u8, bios::serial::Config)> {
+        if self.serial_console_on {
+            Some((
+                0,
+                bios::serial::Config {
+                    data_rate_bps: self.serial_baud,
+                    data_bits: bios::serial::DataBits::Eight,
+                    stop_bits: bios::serial::StopBits::One,
+                    parity: bios::serial::Parity::None,
+                    handshaking: bios::serial::Handshaking::None,
+                },
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+impl core::default::Default for Config {
+    fn default() -> Config {
+        Config {
+            vga_console_on: true,
+            serial_console_on: false,
+            serial_baud: 115200,
+        }
+    }
+}
+
 // ===========================================================================
 // Private functions
 // ===========================================================================
@@ -206,46 +276,6 @@ unsafe fn start_up_init() {
     r0::init_data(&mut __sdata, &mut __edata, &__sidata);
 }
 
-struct Config {
-    vga_console: bool,
-    serial_console: bool,
-}
-
-impl Config {
-    /// Create a new default Config object
-    ///
-    /// TODO: We should load from EEPROM / RTC SRAM here.
-    fn new() -> Config {
-        Config {
-            vga_console: true,
-            serial_console: true,
-        }
-    }
-
-    /// Should this system use the VGA console?
-    fn has_vga_console(&self) -> bool {
-        self.vga_console
-    }
-
-    /// Should this system use the UART console?
-    fn has_serial_console(&self) -> Option<(u8, bios::serial::Config)> {
-        if self.serial_console {
-            Some((
-                0,
-                bios::serial::Config {
-                    data_rate_bps: 115200,
-                    data_bits: bios::serial::DataBits::Eight,
-                    stop_bits: bios::serial::StopBits::One,
-                    parity: bios::serial::Parity::None,
-                    handshaking: bios::serial::Handshaking::None,
-                },
-            ))
-        } else {
-            None
-        }
-    }
-}
-
 // ===========================================================================
 // Public functions / impl for public types
 // ===========================================================================
@@ -258,7 +288,7 @@ extern "C" fn main(api: &'static bios::Api) -> ! {
         API = Some(api);
     }
 
-    let config = Config::new();
+    let config = Config::load().unwrap_or_else(|_| Config::default());
 
     if config.has_vga_console() {
         let mut addr: *mut u8 = core::ptr::null_mut();
