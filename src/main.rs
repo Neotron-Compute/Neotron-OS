@@ -295,7 +295,7 @@ extern "C" fn main(api: &'static bios::Api) -> ! {
         let mut width = 0;
         let mut height = 0;
         (api.video_memory_info_get)(&mut addr, &mut width, &mut height);
-        if addr != core::ptr::null_mut() {
+        if !addr.is_null() {
             let mut vga = VgaConsole {
                 addr,
                 width,

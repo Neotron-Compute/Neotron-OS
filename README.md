@@ -19,48 +19,37 @@ This OS is a work in progress. We intend to support:
 
 ## Build instructions
 
-Your board will need an appropriate Neotron BIOS installed, and you need to have OpenOCD running for your particular board. You also need to set the linker 
-arguments so you link the binary to suit the memory available on your system.
+Your board will need an appropriate Neotron BIOS installed, and you need to
+have OpenOCD (or other programming tool) running for your particular board.
+You may also need to set the linker arguments so you link the binary to suit
+the memory available on your system.
 
-### Build Instructions for the Neotron Pico
-
-The Neotron Pico has some special memory requirements - in particular, the
-flash lives at `0x1000_0000` and not `0x0000_0000`. There is 1920 KiB of
-flash, and 240 KiB of RAM available.
+### Build Instructions for the Neotron Pico (and other systems with Flash at `0x1000_0000`)
 
 ```
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
 $ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-os-pico.ld" cargo build --release --target=thumbv6m-none-eabi
+$ RUSTFLAGS="-C link-arg=-Tneotron-flash-1000.ld" cargo build --release --target=thumbv6m-none-eabi
 ```
 
-### Build Instructions for 256K RAM systems
-
-Systems which reserve the second 512 KiB of Flash and first 256 KiB of SRAM
-for the OS can use this linker script. These systems include the Neotron
-340ST.
+### Build Instructions for the STM32 (and other systems with Flash at `0x0800_0000`)
 
 ```
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
 $ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-os-256k.ld" cargo run --release
+$ RUSTFLAGS="-C link-arg=-Tneotron-flash-0800.ld" cargo build --release --target=thumbv6m-none-eabi
 ```
 
-### Build Instructions for 32K RAM systems
-
-Systems which reserve the second 128 KiB of Flash and first 26 KiB of SRAM for
-the OS can use this linker script. These systems include the Neotron 32.
+### Build Instructions for other systems (with Flash at `0x0000_0000`)
 
 ```
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
 $ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-os-26k.ld" cargo run --release
+$ RUSTFLAGS="-C link-arg=-Tneotron-flash-0000.ld" cargo run --release
 ```
-
-TODO: Think of a better way of setting the memory limits for a particular OS build.
 
 ## Changelog
 

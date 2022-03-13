@@ -21,15 +21,13 @@
 /* Provides information about the memory layout of the device */
 MEMORY
 {
-    /* The BIOS gets the first 128 KiB of Flash, leaving 1920 KiB for the OS */
-    FLASH (rx)  : ORIGIN = 0x10020000, LENGTH = 0x1E0000
+    /* The first 128 KiB is for the BIOS. We get the rest. */
+    FLASH (rx)  : ORIGIN = 0x00020000, LENGTH = 128K
     /*
-     * The RP2040 has 256 KiB of SRAM striped across four banks (for high
-     * performance), plus a fifth bank containing another 8 KiB of RAM. The
-     * BIOS is at the top of the high-performance RAM. We get the lower part.
+     * We get the bottom 4KB of RAM. Anything above that is for applications
+     * (up to wherever the BIOS tells us we can use.)
      */
-    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 0x3C000
-    /* The SDRAM holds the LCD framebuffers */
+    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 4K
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
