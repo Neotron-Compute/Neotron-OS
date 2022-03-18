@@ -1,5 +1,5 @@
 [package]
-name = "neotron_os"
+name = "neotron-os"
 version = "0.1.0"
 authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>"]
 edition = "2018"
@@ -9,7 +9,17 @@ readme = "README.md"
 repository = "https://github.com/neotron-compute/Neotron-OS"
 
 [[bin]]
-name = "neotron_os"
+name = "flash1002"
+test = false
+bench = false
+
+[[bin]]
+name = "flash0802"
+test = false
+bench = false
+
+[[bin]]
+name = "flash0002"
 test = false
 bench = false
 

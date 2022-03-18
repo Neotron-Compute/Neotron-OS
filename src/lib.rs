@@ -2,12 +2,11 @@
 //!
 //! This OS is intended to be loaded by a Neotron BIOS.
 //!
-//! Copyright (c) The Neotron Developers, 2020
+//! Copyright (c) The Neotron Developers, 2022
 //!
 //! Licence: GPL v3 or higher (see ../LICENCE.md)
 
 #![no_std]
-#![no_main]
 
 // Imports
 use core::fmt::Write;
@@ -17,12 +16,6 @@ use serde::{Deserialize, Serialize};
 // ===========================================================================
 // Global Variables
 // ===========================================================================
-
-/// This tells the BIOS how to start the OS. This must be the first four bytes
-/// of our portion of Flash.
-#[link_section = ".entry_point"]
-#[used]
-pub static ENTRY_POINT_ADDR: extern "C" fn(&'static bios::Api) -> ! = main;
 
 /// The OS version string
 const OS_VERSION: &str = concat!("Neotron OS, version ", env!("CARGO_PKG_VERSION"), "-2");
@@ -282,7 +275,7 @@ unsafe fn start_up_init() {
 
 /// This is the function the BIOS calls. This is because we store the address
 /// of this function in the ENTRY_POINT_ADDR variable.
-extern "C" fn main(api: &'static bios::Api) -> ! {
+pub extern "C" fn main(api: &'static bios::Api) -> ! {
     unsafe {
         start_up_init();
         API = Some(api);
@@ -295,7 +288,7 @@ extern "C" fn main(api: &'static bios::Api) -> ! {
         let mut width = 0;
         let mut height = 0;
         (api.video_memory_info_get)(&mut addr, &mut width, &mut height);
-        if addr != core::ptr::null_mut() {
+        if !addr.is_null() {
             let mut vga = VgaConsole {
                 addr,
                 width,

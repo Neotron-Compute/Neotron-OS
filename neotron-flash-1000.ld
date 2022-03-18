@@ -21,10 +21,13 @@
 /* Provides information about the memory layout of the device */
 MEMORY
 {
-    /* The OS gets the top 128 KiB of Flash, leaving the first 128 KiB for the BIOS */
-    FLASH (rx)  : ORIGIN = 0x00020000, LENGTH = 128K
-    /* The BIOS gets the top 6 KiB of SRAM (including the Stack), leaving 26 KiB for the OS (at 0x2000_0000 to 0x2000_67FF) */
-    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 26K
+    /* The first 128 KiB is for the BIOS. We get the rest. */
+    FLASH (rx)  : ORIGIN = 0x10020000, LENGTH = 128K
+    /*
+     * We get the bottom 4KB of RAM. Anything above that is for applications
+     * (up to wherever the BIOS tells us we can use.)
+     */
+    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 4K
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
