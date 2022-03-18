@@ -30,7 +30,7 @@ codegen-units = 1
 opt-level = "s"
 
 [dependencies]
-neotron-common-bios = { path = "./common" }
+neotron-common-bios = "0.1.0"
 r0 = "1.0"
 postcard = "0.5"
 serde = { version = "1.0", default-features = false }
