@@ -22,7 +22,7 @@
 MEMORY
 {
     /* The first 128 KiB is for the BIOS. We get the rest. */
-    FLASH (rx)  : ORIGIN = 0x00020000, LENGTH = 128K
+    FLASH (rx)  : ORIGIN = 0x10020000, LENGTH = 128K
     /*
      * We get the bottom 4KB of RAM. Anything above that is for applications
      * (up to wherever the BIOS tells us we can use.)
@@ -31,7 +31,7 @@ MEMORY
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
-ENTRY(entry_point);
+ENTRY(main);
 EXTERN(__RESET_VECTOR);
 
 /* # Sections */

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 // ===========================================================================
 
 /// The OS version string
-const OS_VERSION: &str = concat!("Neotron OS, version ", env!("CARGO_PKG_VERSION"), "-2");
+const OS_VERSION: &str = concat!("Neotron OS, version ", env!("OS_VERSION"));
 
 /// We store the API object supplied by the BIOS here
 static mut API: Option<&'static bios::Api> = None;
@@ -275,6 +275,7 @@ unsafe fn start_up_init() {
 
 /// This is the function the BIOS calls. This is because we store the address
 /// of this function in the ENTRY_POINT_ADDR variable.
+#[no_mangle]
 pub extern "C" fn main(api: &'static bios::Api) -> ! {
     unsafe {
         start_up_init();
@@ -284,15 +285,14 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
     let config = Config::load().unwrap_or_else(|_| Config::default());
 
     if config.has_vga_console() {
-        let mut addr: *mut u8 = core::ptr::null_mut();
-        let mut width = 0;
-        let mut height = 0;
-        (api.video_memory_info_get)(&mut addr, &mut width, &mut height);
-        if !addr.is_null() {
+        let mode = (api.video_get_mode)();
+        let (width, height) = (mode.text_width(), mode.text_height());
+
+        if let (Some(width), Some(height)) = (width, height) {
             let mut vga = VgaConsole {
-                addr,
-                width,
-                height,
+                addr: (api.video_get_framebuffer)(),
+                width: width as u8,
+                height: height as u8,
                 row: 0,
                 col: 0,
             };

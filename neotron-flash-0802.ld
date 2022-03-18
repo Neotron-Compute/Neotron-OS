@@ -31,7 +31,7 @@ MEMORY
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
-ENTRY(entry_point);
+ENTRY(main);
 EXTERN(__RESET_VECTOR);
 
 /* # Sections */
