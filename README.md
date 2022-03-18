@@ -19,58 +19,38 @@ This OS is a work in progress. We intend to support:
 
 ## Build instructions
 
-Your board will need an appropriate Neotron BIOS installed, and you need to have OpenOCD running for your particular board. You also need to set the linker 
-arguments so you link the binary to suit the memory available on your system.
+Your board will need an appropriate Neotron BIOS installed, and you need to have
+OpenOCD or some other programming tool running for your particular board. See
+your BIOS instructions for more details.
 
-### Build Instructions for the Neotron Pico
+We compile one version of Neotron OS, but we link it three times to produce
+three binaries:
 
-The Neotron Pico has some special memory requirements - in particular, the
-flash lives at `0x1000_0000` and not `0x0000_0000`. There is 1920 KiB of
-flash, and 240 KiB of RAM available.
-
-```
-$ git clone https://github.com/neotron-compute/Neotron-OS.git
-$ cd Neotron-OS
-$ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-os-pico.ld" cargo build --release --target=thumbv6m-none-eabi
-```
-
-### Build Instructions for 256K RAM systems
-
-Systems which reserve the second 512 KiB of Flash and first 256 KiB of SRAM
-for the OS can use this linker script. These systems include the Neotron
-340ST.
+* `flash0002` - is linked to run from address `0x0002_0000`
+* `flash1002` - is linked to run from address `0x1002_0000`
+* `flash0802` - is linked to run from address `0x0802_0000`
 
 ```
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
 $ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-os-256k.ld" cargo run --release
+$ cargo build --release
+$ ls ./target/thumbv6m-none-eabi/release/flash{10,08,00}02
+./target/thumbv6m-none-eabi/release/flash0002 ./target/thumbv6m-none-eabi/release/flash0802 ./target/thumbv6m-none-eabi/release/flash1002
 ```
 
-### Build Instructions for 32K RAM systems
-
-Systems which reserve the second 128 KiB of Flash and first 26 KiB of SRAM for
-the OS can use this linker script. These systems include the Neotron 32.
-
-```
-$ git clone https://github.com/neotron-compute/Neotron-OS.git
-$ cd Neotron-OS
-$ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-os-26k.ld" cargo run --release
-```
-
-TODO: Think of a better way of setting the memory limits for a particular OS build.
+Your BIOS should tell you which one you want and how to load it onto your system.
 
 ## Changelog
 
 ### Unreleased Changes ([Source](https://github.com/neotron-compute/Neotron-OS/tree/master))
 
 * Basic `println!` to the text buffer.
+* Re-arranged linker script setup
 
 ## Licence
 
-    Neotron-OS Copyright (c) The Neotron Developers, 2020
+    Neotron-OS Copyright (c) The Neotron Developers, 2022
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by

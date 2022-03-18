@@ -2,12 +2,11 @@
 //!
 //! This OS is intended to be loaded by a Neotron BIOS.
 //!
-//! Copyright (c) The Neotron Developers, 2020
+//! Copyright (c) The Neotron Developers, 2022
 //!
 //! Licence: GPL v3 or higher (see ../LICENCE.md)
 
 #![no_std]
-#![no_main]
 
 // Imports
 use core::fmt::Write;
@@ -18,14 +17,8 @@ use serde::{Deserialize, Serialize};
 // Global Variables
 // ===========================================================================
 
-/// This tells the BIOS how to start the OS. This must be the first four bytes
-/// of our portion of Flash.
-#[link_section = ".entry_point"]
-#[used]
-pub static ENTRY_POINT_ADDR: extern "C" fn(&'static bios::Api) -> ! = main;
-
 /// The OS version string
-const OS_VERSION: &str = concat!("Neotron OS, version ", env!("CARGO_PKG_VERSION"), "-2");
+const OS_VERSION: &str = concat!("Neotron OS, version ", env!("OS_VERSION"));
 
 /// We store the API object supplied by the BIOS here
 static mut API: Option<&'static bios::Api> = None;
@@ -282,7 +275,8 @@ unsafe fn start_up_init() {
 
 /// This is the function the BIOS calls. This is because we store the address
 /// of this function in the ENTRY_POINT_ADDR variable.
-extern "C" fn main(api: &'static bios::Api) -> ! {
+#[no_mangle]
+pub extern "C" fn main(api: &'static bios::Api) -> ! {
     unsafe {
         start_up_init();
         API = Some(api);
@@ -291,15 +285,14 @@ extern "C" fn main(api: &'static bios::Api) -> ! {
     let config = Config::load().unwrap_or_else(|_| Config::default());
 
     if config.has_vga_console() {
-        let mut addr: *mut u8 = core::ptr::null_mut();
-        let mut width = 0;
-        let mut height = 0;
-        (api.video_memory_info_get)(&mut addr, &mut width, &mut height);
-        if addr != core::ptr::null_mut() {
+        let mode = (api.video_get_mode)();
+        let (width, height) = (mode.text_width(), mode.text_height());
+
+        if let (Some(width), Some(height)) = (width, height) {
             let mut vga = VgaConsole {
-                addr,
-                width,
-                height,
+                addr: (api.video_get_framebuffer)(),
+                width: width as u8,
+                height: height as u8,
                 row: 0,
                 col: 0,
             };
