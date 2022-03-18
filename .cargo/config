@@ -1,5 +1,2 @@
-[target.thumbv7em-none-eabihf]
-runner = 'arm-none-eabi-gdb --command=gdb.cfg -w'
-
 [build]
-target = "thumbv7em-none-eabihf"
+target = "thumbv6m-none-eabi"

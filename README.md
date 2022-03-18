@@ -19,43 +19,34 @@ This OS is a work in progress. We intend to support:
 
 ## Build instructions
 
-Your board will need an appropriate Neotron BIOS installed, and you need to
-have OpenOCD (or other programming tool) running for your particular board.
-You may also need to set the linker arguments so you link the binary to suit
-the memory available on your system.
+Your board will need an appropriate Neotron BIOS installed, and you need to have
+OpenOCD or some other programming tool running for your particular board. See
+your BIOS instructions for more details.
 
-### Build Instructions for the Neotron Pico (and other systems with Flash at `0x1000_0000`)
+We compile one version of Neotron OS, but we link it three times to produce
+three binaries:
 
-```
-$ git clone https://github.com/neotron-compute/Neotron-OS.git
-$ cd Neotron-OS
-$ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-flash-1000.ld" cargo build --release --target=thumbv6m-none-eabi
-```
-
-### Build Instructions for the STM32 (and other systems with Flash at `0x0800_0000`)
+* `flash0002` - is linked to run from address `0x0002_0000`
+* `flash1002` - is linked to run from address `0x1002_0000`
+* `flash0802` - is linked to run from address `0x0802_0000`
 
 ```
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
 $ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-flash-0800.ld" cargo build --release --target=thumbv6m-none-eabi
+$ cargo build --release
+$ ls ./target/thumbv6m-none-eabi/release/flash{10,08,00}02
+./target/thumbv6m-none-eabi/release/flash0002 ./target/thumbv6m-none-eabi/release/flash0802 ./target/thumbv6m-none-eabi/release/flash1002
 ```
 
-### Build Instructions for other systems (with Flash at `0x0000_0000`)
-
-```
-$ git clone https://github.com/neotron-compute/Neotron-OS.git
-$ cd Neotron-OS
-$ git submodule update --init
-$ RUSTFLAGS="-C link-arg=-Tneotron-flash-0000.ld" cargo run --release
-```
+Your BIOS should tell you which one you want and how to load it onto your system.
 
 ## Changelog
 
 ### Unreleased Changes ([Source](https://github.com/neotron-compute/Neotron-OS/tree/master))
 
 * Basic `println!` to the text buffer.
+* Re-arranged linker script setup
 
 ## Licence
 
