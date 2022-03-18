@@ -50,7 +50,7 @@ Your BIOS should tell you which one you want and how to load it onto your system
 
 ## Licence
 
-    Neotron-OS Copyright (c) The Neotron Developers, 2020
+    Neotron-OS Copyright (c) The Neotron Developers, 2022
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
