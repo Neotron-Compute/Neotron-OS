@@ -494,9 +494,13 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("PANIC!\n{:#?}", info);
-    use core::sync::atomic::{self, Ordering};
     loop {
-        atomic::compiler_fence(Ordering::SeqCst);
+        for ch in "|/-\\".chars() {
+            print!("\r{}", ch);
+            if let Some(api) = unsafe { API } {
+                (api.delay)(neotron_common_bios::Timeout::new_ms(100));
+            }
+        }
     }
 }
 
