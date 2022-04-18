@@ -70,7 +70,8 @@ struct VgaConsole {
 }
 
 impl VgaConsole {
-    const DEFAULT_ATTR: u8 = (2 << 3) | (1 << 0);
+    /// White on Black
+    const DEFAULT_ATTR: u8 = (15 << 3) | 0;
 
     fn move_char_right(&mut self) {
         self.col += 1;
@@ -88,23 +89,16 @@ impl VgaConsole {
         }
     }
 
-    fn read(&self) -> (u8, u8) {
-        let offset =
-            ((isize::from(self.row) * isize::from(self.width)) + isize::from(self.col)) * 2;
-        let glyph = unsafe { core::ptr::read_volatile(self.addr.offset(offset)) };
-        let attr = unsafe { core::ptr::read_volatile(self.addr.offset(offset + 1)) };
-        (glyph, attr)
-    }
-
-    fn find_start_row(&mut self) {
+    fn clear(&mut self) {
         for row in 0..self.height {
-            self.row = row;
-            let g = self.read().0;
-            if (g == b'\0') || (g == b' ') {
-                // Found a line with nothing on it - start here!
-                break;
+            for col in 0..self.width {
+                self.row = row;
+                self.col = col;
+                self.write(b' ', Some(Self::DEFAULT_ATTR));
             }
         }
+        self.row = 0;
+        self.col = 0;
     }
 
     fn write(&mut self, glyph: u8, attr: Option<u8>) {
@@ -253,6 +247,7 @@ impl core::default::Default for Config {
 
 /// Initialise our global variables - the BIOS will not have done this for us
 /// (as it doesn't know where they are).
+#[cfg(target_os = "none")]
 unsafe fn start_up_init() {
     extern "C" {
 
@@ -269,6 +264,11 @@ unsafe fn start_up_init() {
     r0::init_data(&mut __sdata, &mut __edata, &__sidata);
 }
 
+#[cfg(not(target_os = "none"))]
+unsafe fn start_up_init() {
+    // Nothing to do
+}
+
 // ===========================================================================
 // Public functions / impl for public types
 // ===========================================================================
@@ -279,6 +279,9 @@ unsafe fn start_up_init() {
 pub extern "C" fn main(api: &'static bios::Api) -> ! {
     unsafe {
         start_up_init();
+        if (api.api_version_get)() != neotron_common_bios::API_VERSION {
+            panic!("API mismatch!");
+        }
         API = Some(api);
     }
 
@@ -296,7 +299,7 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
                 row: 0,
                 col: 0,
             };
-            vga.find_start_row();
+            vga.clear();
             unsafe {
                 VGA_CONSOLE = Some(vga);
             }
