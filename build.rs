@@ -1,7 +1,16 @@
+use std::env;
 fn main() {
-    println!("cargo:rustc-link-arg-bin=flash1002=-Tneotron-flash-1002.ld");
-    println!("cargo:rustc-link-arg-bin=flash0802=-Tneotron-flash-0802.ld");
-    println!("cargo:rustc-link-arg-bin=flash0002=-Tneotron-flash-0002.ld");
+
+    match env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        Ok("none") => {
+            println!("cargo:rustc-link-arg-bin=flash1002=-Tneotron-flash-1002.ld");
+            println!("cargo:rustc-link-arg-bin=flash0802=-Tneotron-flash-0802.ld");
+            println!("cargo:rustc-link-arg-bin=flash0002=-Tneotron-flash-0002.ld");                    
+        }
+        _ => {
+            // No args
+        }
+    }
 
     if let Ok(cmd_output) = std::process::Command::new("git")
         .arg("describe")

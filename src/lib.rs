@@ -70,7 +70,8 @@ struct VgaConsole {
 }
 
 impl VgaConsole {
-    const DEFAULT_ATTR: u8 = (2 << 3) | (1 << 0);
+    /// White on Black
+    const DEFAULT_ATTR: u8 = (15 << 3) | 0;
 
     fn move_char_right(&mut self) {
         self.col += 1;
@@ -89,6 +90,18 @@ impl VgaConsole {
             self.row = self.height - 1;
             self.scroll_page();
         }
+    }
+
+    fn clear(&mut self) {
+        for row in 0..self.height {
+            for col in 0..self.width {
+                self.row = row;
+                self.col = col;
+                self.write(b' ', Some(Self::DEFAULT_ATTR));
+            }
+        }
+        self.row = 0;
+        self.col = 0;
     }
 
     fn write(&mut self, glyph: u8, attr: Option<u8>) {
@@ -376,6 +389,7 @@ impl core::default::Default for Config {
 
 /// Initialise our global variables - the BIOS will not have done this for us
 /// (as it doesn't know where they are).
+#[cfg(target_os = "none")]
 unsafe fn start_up_init() {
     extern "C" {
 
@@ -392,6 +406,11 @@ unsafe fn start_up_init() {
     r0::init_data(&mut __sdata, &mut __edata, &__sidata);
 }
 
+#[cfg(not(target_os = "none"))]
+unsafe fn start_up_init() {
+    // Nothing to do
+}
+
 // ===========================================================================
 // Public functions / impl for public types
 // ===========================================================================
@@ -402,6 +421,9 @@ unsafe fn start_up_init() {
 pub extern "C" fn main(api: &'static bios::Api) -> ! {
     unsafe {
         start_up_init();
+        if (api.api_version_get)() != neotron_common_bios::API_VERSION {
+            panic!("API mismatch!");
+        }
         API = Some(api);
     }
 
@@ -418,13 +440,14 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
         let (width, height) = (mode.text_width(), mode.text_height());
 
         if let (Some(width), Some(height)) = (width, height) {
-            let vga = VgaConsole {
+            let mut vga = VgaConsole {
                 addr: (api.video_get_framebuffer)(),
                 width: width as isize,
                 height: height as isize,
                 row: 0,
                 col: 0,
             };
+            vga.clear();
             unsafe {
                 VGA_CONSOLE = Some(vga);
             }
@@ -460,11 +483,7 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
             print!(".");
         }
         println!("{}", i);
-        // An awfully crude delay loop. We all the API to ensure the loop isn't
-        // optimised away.
-        for _delay in 0..2_000_000 {
-            let _ver = (api.api_version_get)();
-        }
+        (api.delay)(neotron_common_bios::Timeout::new_ms(250));
     }
 
     panic!("Testing a panic...");

@@ -23,14 +23,21 @@ name = "flash0002"
 test = false
 bench = false
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [profile.release]
 lto = true
 debug = true
 codegen-units = 1
 opt-level = "s"
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
 
 [dependencies]
-neotron-common-bios = "0.4.0"
+neotron-common-bios = { version = "0.6.0", path = "../neotron-common-bios" }
 r0 = "1.0"
 postcard = "0.5"
 serde = { version = "1.0", default-features = false }
