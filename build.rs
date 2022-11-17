@@ -1,11 +1,10 @@
 use std::env;
 fn main() {
-
     match env::var("CARGO_CFG_TARGET_OS").as_deref() {
         Ok("none") => {
             println!("cargo:rustc-link-arg-bin=flash1002=-Tneotron-flash-1002.ld");
             println!("cargo:rustc-link-arg-bin=flash0802=-Tneotron-flash-0802.ld");
-            println!("cargo:rustc-link-arg-bin=flash0002=-Tneotron-flash-0002.ld");                    
+            println!("cargo:rustc-link-arg-bin=flash0002=-Tneotron-flash-0002.ld");
         }
         _ => {
             // No args
@@ -29,6 +28,6 @@ fn main() {
         println!("cargo:rustc-env=OS_VERSION={}", env!("CARGO_PKG_VERSION"));
     }
 
-    #[cfg(target_os="macos")]
+    #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-lib=c");
 }

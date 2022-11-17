@@ -430,10 +430,10 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
     let config = Config::load().unwrap_or_else(|_| Config::default());
 
     if config.has_vga_console() {
-        // Try and set 80x50 mode for that authentic Windows NT bootloader feel
+        // Try and set 80x30 mode for maximum compatibility
         (api.video_set_mode)(bios::video::Mode::new(
-            bios::video::Timing::T640x400,
-            bios::video::Format::Text8x8,
+            bios::video::Timing::T640x480,
+            bios::video::Format::Text8x16,
         ));
         // Work with whatever we get
         let mode = (api.video_get_mode)();
@@ -465,28 +465,47 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
     println!("Welcome to {}!", OS_VERSION);
     println!("Copyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022");
 
+    let mut found;
+
+    println!("Memory Regions:");
+    found = false;
     for region_idx in 0..=255 {
-        match (api.memory_get_region)(region_idx) {
-            bios::Result::Ok(region) => {
-                println!("Region {}: {}", region_idx, region);
-            }
-            _ => {
-                // Ran out of regions (we assume they are consecutive)
-                break;
-            }
+        if let bios::Option::Some(region) = (api.memory_get_region)(region_idx) {
+            println!("Region {}: {}", region_idx, region);
+            found = true;
+        } else {
+            // Ran out of regions (we assume they are consecutive)
+            break;
         }
     }
-
-    // Some text, to force the console to scroll.
-    for i in 0..50 {
-        for _x in 0..50 - i {
-            print!(".");
-        }
-        println!("{}", i);
-        (api.delay)(neotron_common_bios::Timeout::new_ms(250));
+    if !found {
+        println!("None.");
     }
 
-    panic!("Testing a panic...");
+    println!("Serial Ports:");
+    found = false;
+    for device_idx in 0..=255 {
+        if let bios::Option::Some(serial) = (api.serial_get_info)(device_idx) {
+            println!("Serial Device {}: {:?}", device_idx, serial);
+            found = true;
+        } else {
+            // Ran out of serial devices (we assume they are consecutive)
+            break;
+        }
+    }
+    if !found {
+        println!("None.");
+    }
+
+    loop {
+        if let neotron_common_bios::Result::Ok(neotron_common_bios::Option::Some(ev)) =
+            (api.hid_get_event)()
+        {
+            let ticks = (api.time_ticks_get)();
+            println!("HID Ev: {:?} @ {}", ev, ticks.0);
+        }
+        (api.power_idle)();
+    }
 }
 
 /// Called when we have a panic.
@@ -495,11 +514,8 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("PANIC!\n{:#?}", info);
     loop {
-        for ch in "|/-\\".chars() {
-            print!("\r{}", ch);
-            if let Some(api) = unsafe { API } {
-                (api.delay)(neotron_common_bios::Timeout::new_ms(100));
-            }
+        if let Some(api) = unsafe { API } {
+            (api.power_idle)();
         }
     }
 }
