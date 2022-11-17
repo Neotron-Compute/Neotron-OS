@@ -28,4 +28,7 @@ fn main() {
     } else {
         println!("cargo:rustc-env=OS_VERSION={}", env!("CARGO_PKG_VERSION"));
     }
+
+    #[cfg(target_os="macos")]
+    println!("cargo:rustc-link-lib=c");
 }
