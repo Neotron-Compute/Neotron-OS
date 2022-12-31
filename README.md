@@ -1,7 +1,7 @@
 # Neotron OS
 
 This is the Neotron OS. It will run on any system which has an implementation
-of the [Neotron BIOS](https://github.com/neotron-compute/Neotron-BIOS).
+of the [Neotron BIOS](https://github.com/neotron-compute/Neotron-Common-BIOS).
 
 ## Status
 
