@@ -34,13 +34,19 @@ impl VgaConsole {
         self.row += 1;
     }
 
+    fn reset_cursor(&mut self) {
+        self.row = 0;
+        self.col = 0;
+    }
+
     fn scroll_as_required(&mut self) {
-        if self.col == self.width {
+        assert!(self.row <= self.height);
+        if self.col >= self.width {
             self.col = 0;
             self.row += 1;
         }
         if self.row == self.height {
-            self.row = self.height - 1;
+            self.row -= 1;
             self.scroll_page();
         }
     }
@@ -48,17 +54,20 @@ impl VgaConsole {
     pub fn clear(&mut self) {
         for row in 0..self.height {
             for col in 0..self.width {
-                self.row = row;
-                self.col = col;
-                self.write(b' ', Some(Self::DEFAULT_ATTR));
+                self.write_at(row, col, b' ', Some(Self::DEFAULT_ATTR));
             }
         }
-        self.row = 0;
-        self.col = 0;
+        self.reset_cursor();
     }
 
     fn write(&mut self, glyph: u8, attr: Option<u8>) {
-        let offset = ((self.row * self.width) + self.col) * 2;
+        self.write_at(self.row, self.col, glyph, attr);
+    }
+
+    fn write_at(&mut self, row: isize, col: isize, glyph: u8, attr: Option<u8>) {
+        assert!(row < self.height, "{} >= {}?", row, self.height);
+        assert!(col < self.width, "{} => {}?", col, self.width);
+        let offset = ((row * self.width) + col) * 2;
         unsafe { core::ptr::write_volatile(self.addr.offset(offset), glyph) };
         if let Some(a) = attr {
             unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), a) };
@@ -68,17 +77,16 @@ impl VgaConsole {
     fn scroll_page(&mut self) {
         let row_len_bytes = self.width * 2;
         unsafe {
+            // Scroll rows[1..=height-1] to become rows[0..=height-2].
             core::ptr::copy(
                 self.addr.offset(row_len_bytes),
                 self.addr,
                 (row_len_bytes * (self.height - 1)) as usize,
             );
-            // Blank bottom line
+            // Blank the bottom line of the screen (rows[height-1]).
             for col in 0..self.width {
-                self.col = col;
-                self.write(b' ', Some(Self::DEFAULT_ATTR));
+                self.write_at(self.height - 1, col, b' ', Some(Self::DEFAULT_ATTR));
             }
-            self.col = 0;
         }
     }
 
@@ -228,8 +236,12 @@ impl VgaConsole {
 impl core::fmt::Write for VgaConsole {
     fn write_str(&mut self, data: &str) -> core::fmt::Result {
         for ch in data.chars() {
+            self.scroll_as_required();
             match ch {
                 '\u{0008}' => {
+                    // This is a backspace, so we go back one character (if we
+                    // can). We expect the caller to provide "\u{0008} \u{0008}"
+                    // to actually erase the char then move the cursor over it.
                     if self.col > 0 {
                         self.col -= 1;
                     }
@@ -242,7 +254,6 @@ impl core::fmt::Write for VgaConsole {
                     self.move_char_down();
                 }
                 _ => {
-                    self.scroll_as_required();
                     self.write(Self::map_char_to_glyph(ch), None);
                     self.move_char_right();
                 }

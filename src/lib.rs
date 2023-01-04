@@ -34,14 +34,32 @@ static mut SERIAL_CONSOLE: Option<SerialConsole> = None;
 
 static OS_MENU: menu::Menu<Ctx> = menu::Menu {
     label: "root",
-    items: &[&menu::Item {
-        item_type: menu::ItemType::Callback {
-            function: cmd_mem,
-            parameters: &[],
+    items: &[
+        &menu::Item {
+            item_type: menu::ItemType::Callback {
+                function: cmd_mem,
+                parameters: &[],
+            },
+            command: "mem",
+            help: Some("Show memory regions"),
         },
-        command: "mem",
-        help: Some("Show memory regions"),
-    }],
+        &menu::Item {
+            item_type: menu::ItemType::Callback {
+                function: cmd_clear,
+                parameters: &[],
+            },
+            command: "clear",
+            help: Some("Clear the screen"),
+        },
+        &menu::Item {
+            item_type: menu::ItemType::Callback {
+                function: cmd_fill,
+                parameters: &[],
+            },
+            command: "fill",
+            help: Some("Fill the screen with characters"),
+        },
+    ],
     entry: None,
     exit: None,
 };
@@ -261,6 +279,34 @@ fn cmd_mem(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _co
     }
     if !found {
         println!("None.");
+    }
+}
+
+/// Called when the "clear" command is executed.
+fn cmd_clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+        console.clear();
+    }
+}
+
+/// Called when the "fill" command is executed.
+fn cmd_fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+        console.clear();
+    }
+    let api = API.get();
+    let mode = (api.video_get_mode)();
+    let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
+        println!("Unable to get console size");
+        return;
+    };
+    // A range of printable ASCII compatible characters
+    let mut char_cycle = (' '..='~').cycle();
+    // Scroll two screen fulls
+    for _row in 0..height * 2 {
+        for _col in 0..width {
+            print!("{}", char_cycle.next().unwrap());
+        }
     }
 }
 
