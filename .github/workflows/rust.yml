@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
         with:
           submodules: true
       - name: Check Syntax
@@ -23,23 +23,6 @@ jobs:
           cargo install cargo-binutils
       - name: Build
         run: ./build.sh
-      - name: Get Branch Name
-        if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
-        id: branch_name
-        run: |
-          echo ::set-output name=SOURCE_TAG::${GITHUB_REF#refs/tags/}
-      - name: Create Release
-        if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ steps.branch_name.outputs.SOURCE_TAG }}
-          draft: false
-          prerelease: false
-
       - name: Upload files to Release
         if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
@@ -64,5 +47,3 @@ jobs:
             ./release/thumbv7m-none-eabi-flash1002-libneotron_os.bin
             ./release/thumbv7m-none-eabi-flash1002-libneotron_os.elf
             ./release/x86_64-unknown-linux-gnu-libneotron_os.so
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
