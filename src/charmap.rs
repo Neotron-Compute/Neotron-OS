@@ -160,7 +160,7 @@ impl UKEnglish {
                 None
             }
             KeyCode::CapsLock => {
-                self.caps_lock = true;
+                self.caps_lock = !self.caps_lock;
                 None
             }
             KeyCode::ControlLeft => {
@@ -411,13 +411,15 @@ impl UKEnglish {
             // Shiftable keys
             KeyCode::BackSlash => {
                 if self.shift_pressed() {
-                    Some(Keypress::Unicode('|'))
+                    Some(Keypress::Unicode('~'))
                 } else {
-                    Some(Keypress::Unicode('\\'))
+                    Some(Keypress::Unicode('#'))
                 }
             }
             KeyCode::BackTick => {
-                if self.shift_pressed() {
+                if self.right_alt {
+                    Some(Keypress::Unicode('|'))
+                } else if self.shift_pressed() {
                     Some(Keypress::Unicode('¬'))
                 } else {
                     Some(Keypress::Unicode('`'))
@@ -473,7 +475,9 @@ impl UKEnglish {
                 }
             }
             KeyCode::Key4 => {
-                if self.shift_pressed() {
+                if self.right_alt {
+                    Some(Keypress::Unicode('€'))
+                } else if self.shift_pressed() {
                     Some(Keypress::Unicode('$'))
                 } else {
                     Some(Keypress::Unicode('4'))
@@ -544,9 +548,9 @@ impl UKEnglish {
             }
             KeyCode::HashTilde => {
                 if self.shift_pressed() {
-                    Some(Keypress::Unicode('~'))
+                    Some(Keypress::Unicode('|'))
                 } else {
-                    Some(Keypress::Unicode('#'))
+                    Some(Keypress::Unicode('\\'))
                 }
             }
             // Non-shiftable keys
@@ -586,9 +590,6 @@ impl UKEnglish {
             }
             KeyCode::AltRight => {
                 self.right_alt = false;
-            }
-            KeyCode::CapsLock => {
-                self.caps_lock = false;
             }
             KeyCode::ControlLeft => {
                 self.left_ctrl = false;
