@@ -11,7 +11,10 @@
 // Imports
 use core::fmt::Write;
 use neotron_common_bios as bios;
-use serde::{Deserialize, Serialize};
+
+mod charmap;
+mod config;
+mod vgaconsole;
 
 // ===========================================================================
 // Global Variables
@@ -21,13 +24,45 @@ use serde::{Deserialize, Serialize};
 const OS_VERSION: &str = concat!("Neotron OS, version ", env!("OS_VERSION"));
 
 /// We store the API object supplied by the BIOS here
-static mut API: Option<&'static bios::Api> = None;
+static API: Api = Api::new();
 
 /// We store our VGA console here.
-static mut VGA_CONSOLE: Option<VgaConsole> = None;
+static mut VGA_CONSOLE: Option<vgaconsole::VgaConsole> = None;
 
 /// We store our VGA console here.
 static mut SERIAL_CONSOLE: Option<SerialConsole> = None;
+
+static OS_MENU: menu::Menu<Ctx> = menu::Menu {
+    label: "root",
+    items: &[
+        &menu::Item {
+            item_type: menu::ItemType::Callback {
+                function: cmd_mem,
+                parameters: &[],
+            },
+            command: "mem",
+            help: Some("Show memory regions"),
+        },
+        &menu::Item {
+            item_type: menu::ItemType::Callback {
+                function: cmd_clear,
+                parameters: &[],
+            },
+            command: "clear",
+            help: Some("Clear the screen"),
+        },
+        &menu::Item {
+            item_type: menu::ItemType::Callback {
+                function: cmd_fill,
+                parameters: &[],
+            },
+            command: "fill",
+            help: Some("Fill the screen with characters"),
+        },
+    ],
+    entry: None,
+    exit: None,
+};
 
 // ===========================================================================
 // Macros
@@ -60,102 +95,25 @@ macro_rules! println {
 // Local types
 // ===========================================================================
 
-#[derive(Debug)]
-struct VgaConsole {
-    addr: *mut u8,
-    width: u8,
-    height: u8,
-    row: u8,
-    col: u8,
-}
-
-impl VgaConsole {
-    const DEFAULT_ATTR: u8 = (2 << 3) | (1 << 0);
-
-    fn move_char_right(&mut self) {
-        self.col += 1;
-        if self.col == self.width {
-            self.col = 0;
-            self.move_char_down();
+impl Api {
+    const fn new() -> Api {
+        Api {
+            bios: core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
         }
     }
 
-    fn move_char_down(&mut self) {
-        self.row += 1;
-        if self.row == self.height {
-            self.scroll_page();
-            self.row = self.height - 1;
-        }
+    fn store(&self, api: *const bios::Api) {
+        self.bios
+            .store(api as *mut bios::Api, core::sync::atomic::Ordering::SeqCst)
     }
 
-    fn read(&self) -> (u8, u8) {
-        let offset =
-            ((isize::from(self.row) * isize::from(self.width)) + isize::from(self.col)) * 2;
-        let glyph = unsafe { core::ptr::read_volatile(self.addr.offset(offset)) };
-        let attr = unsafe { core::ptr::read_volatile(self.addr.offset(offset + 1)) };
-        (glyph, attr)
-    }
-
-    fn find_start_row(&mut self) {
-        for row in 0..self.height {
-            self.row = row;
-            let g = self.read().0;
-            if (g == b'\0') || (g == b' ') {
-                // Found a line with nothing on it - start here!
-                break;
-            }
-        }
-    }
-
-    fn write(&mut self, glyph: u8, attr: Option<u8>) {
-        let offset =
-            ((isize::from(self.row) * isize::from(self.width)) + isize::from(self.col)) * 2;
-        unsafe { core::ptr::write_volatile(self.addr.offset(offset), glyph) };
-        if let Some(a) = attr {
-            unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), a) };
-        }
-    }
-
-    fn scroll_page(&mut self) {
-        unsafe {
-            core::ptr::copy(
-                self.addr.offset(isize::from(self.width * 2)),
-                self.addr,
-                usize::from(self.width) * usize::from(self.height - 1) * 2,
-            );
-            // Blank bottom line
-            for col in 0..self.width {
-                self.col = col;
-                self.write(b' ', Some(Self::DEFAULT_ATTR));
-            }
-            self.col = 0;
-        }
+    fn get(&self) -> &'static bios::Api {
+        unsafe { &*(self.bios.load(core::sync::atomic::Ordering::SeqCst) as *const bios::Api) }
     }
 }
 
-impl core::fmt::Write for VgaConsole {
-    fn write_str(&mut self, data: &str) -> core::fmt::Result {
-        for ch in data.chars() {
-            match ch {
-                '\r' => {
-                    self.col = 0;
-                }
-                '\n' => {
-                    self.col = 0;
-                    self.move_char_down();
-                }
-                b if b <= '\u{00FF}' => {
-                    self.write(b as u8, None);
-                    self.move_char_right();
-                }
-                _ => {
-                    self.write(b'?', None);
-                    self.move_char_right();
-                }
-            }
-        }
-        Ok(())
-    }
+struct Api {
+    bios: core::sync::atomic::AtomicPtr<bios::Api>,
 }
 
 /// Represents the serial port we can use as a text input/output device.
@@ -163,87 +121,26 @@ struct SerialConsole(u8);
 
 impl core::fmt::Write for SerialConsole {
     fn write_str(&mut self, data: &str) -> core::fmt::Result {
-        if let Some(api) = unsafe { API } {
-            (api.serial_write)(
-                // Which port
-                self.0,
-                // Data
-                bios::ApiByteSlice::new(data.as_bytes()),
-                // No timeout
-                bios::Option::None,
-            )
-            .unwrap();
-        }
+        let api = API.get();
+        (api.serial_write)(
+            // Which port
+            self.0,
+            // Data
+            bios::ApiByteSlice::new(data.as_bytes()),
+            // No timeout
+            bios::Option::None,
+        )
+        .unwrap();
         Ok(())
     }
 }
 
-/// Represents our configuration information that we ask the BIOS to serialise
-#[derive(Debug, Serialize, Deserialize)]
-struct Config {
-    vga_console_on: bool,
-    serial_console_on: bool,
-    serial_baud: u32,
-}
+struct Ctx;
 
-impl Config {
-    fn load() -> Result<Config, &'static str> {
-        if let Some(api) = unsafe { API } {
-            let mut buffer = [0u8; 64];
-            match (api.configuration_get)(bios::ApiBuffer::new(&mut buffer)) {
-                bios::Result::Ok(n) => {
-                    postcard::from_bytes(&buffer[0..n]).map_err(|_e| "Failed to parse config")
-                }
-                bios::Result::Err(_e) => Err("Failed to load config"),
-            }
-        } else {
-            Err("No API available?!")
-        }
-    }
-
-    fn save(&self) -> Result<(), &'static str> {
-        if let Some(api) = unsafe { API } {
-            let mut buffer = [0u8; 64];
-            let slice =
-                postcard::to_slice(self, &mut buffer).map_err(|_e| "Failed to parse config")?;
-            (api.configuration_set)(bios::ApiByteSlice::new(slice));
-            Ok(())
-        } else {
-            Err("No API available?!")
-        }
-    }
-
-    /// Should this system use the VGA console?
-    fn has_vga_console(&self) -> bool {
-        self.vga_console_on
-    }
-
-    /// Should this system use the UART console?
-    fn has_serial_console(&self) -> Option<(u8, bios::serial::Config)> {
-        if self.serial_console_on {
-            Some((
-                0,
-                bios::serial::Config {
-                    data_rate_bps: self.serial_baud,
-                    data_bits: bios::serial::DataBits::Eight,
-                    stop_bits: bios::serial::StopBits::One,
-                    parity: bios::serial::Parity::None,
-                    handshaking: bios::serial::Handshaking::None,
-                },
-            ))
-        } else {
-            None
-        }
-    }
-}
-
-impl core::default::Default for Config {
-    fn default() -> Config {
-        Config {
-            vga_console_on: true,
-            serial_console_on: false,
-            serial_baud: 115200,
-        }
+impl core::fmt::Write for Ctx {
+    fn write_str(&mut self, data: &str) -> core::fmt::Result {
+        print!("{}", data);
+        Ok(())
     }
 }
 
@@ -253,6 +150,7 @@ impl core::default::Default for Config {
 
 /// Initialise our global variables - the BIOS will not have done this for us
 /// (as it doesn't know where they are).
+#[cfg(target_os = "none")]
 unsafe fn start_up_init() {
     extern "C" {
 
@@ -269,6 +167,11 @@ unsafe fn start_up_init() {
     r0::init_data(&mut __sdata, &mut __edata, &__sidata);
 }
 
+#[cfg(not(target_os = "none"))]
+unsafe fn start_up_init() {
+    // Nothing to do
+}
+
 // ===========================================================================
 // Public functions / impl for public types
 // ===========================================================================
@@ -276,31 +179,40 @@ unsafe fn start_up_init() {
 /// This is the function the BIOS calls. This is because we store the address
 /// of this function in the ENTRY_POINT_ADDR variable.
 #[no_mangle]
-pub extern "C" fn main(api: &'static bios::Api) -> ! {
+pub extern "C" fn main(api: *const bios::Api) -> ! {
     unsafe {
         start_up_init();
-        API = Some(api);
+        API.store(api);
     }
 
-    let config = Config::load().unwrap_or_else(|_| Config::default());
+    let api = API.get();
+    if (api.api_version_get)() != neotron_common_bios::API_VERSION {
+        panic!("API mismatch!");
+    }
+
+    let config = config::Config::load().unwrap_or_default();
 
     if config.has_vga_console() {
+        // Try and set 80x30 mode for maximum compatibility
+        (api.video_set_mode)(bios::video::Mode::new(
+            bios::video::Timing::T640x480,
+            bios::video::Format::Text8x16,
+        ));
+        // Work with whatever we get
         let mode = (api.video_get_mode)();
         let (width, height) = (mode.text_width(), mode.text_height());
 
         if let (Some(width), Some(height)) = (width, height) {
-            let mut vga = VgaConsole {
-                addr: (api.video_get_framebuffer)(),
-                width: width as u8,
-                height: height as u8,
-                row: 0,
-                col: 0,
-            };
-            vga.find_start_row();
+            let mut vga = vgaconsole::VgaConsole::new(
+                (api.video_get_framebuffer)(),
+                width as isize,
+                height as isize,
+            );
+            vga.clear();
             unsafe {
                 VGA_CONSOLE = Some(vga);
             }
-            println!("Configured VGA console");
+            println!("Configured VGA console {}x{}", width, height);
         }
     }
 
@@ -312,7 +224,90 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
 
     // Now we can call println!
     println!("Welcome to {}!", OS_VERSION);
-    panic!("Testing a panic...");
+    println!("Copyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022");
+
+    let mut found;
+
+    println!("Serial Ports:");
+    found = false;
+    for device_idx in 0..=255 {
+        if let bios::Option::Some(serial) = (api.serial_get_info)(device_idx) {
+            println!("Serial Device {}: {:?}", device_idx, serial);
+            found = true;
+        } else {
+            // Ran out of serial devices (we assume they are consecutive)
+            break;
+        }
+    }
+    if !found {
+        println!("None.");
+    }
+
+    let mut keyboard = charmap::UKEnglish::new();
+    let mut buffer = [0u8; 256];
+    let mut menu = menu::Runner::new(&OS_MENU, &mut buffer, Ctx);
+
+    loop {
+        if let neotron_common_bios::Result::Ok(neotron_common_bios::Option::Some(ev)) =
+            (api.hid_get_event)()
+        {
+            if let Some(charmap::Keypress::Unicode(ch)) = keyboard.handle_event(ev) {
+                let mut buffer = [0u8; 6];
+                let s = ch.encode_utf8(&mut buffer);
+                for b in s.as_bytes() {
+                    menu.input_byte(*b);
+                }
+            }
+        }
+        (api.power_idle)();
+    }
+}
+
+/// Called when the "mem" command is executed.
+fn cmd_mem(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+    println!("Memory Regions:");
+    let mut found = false;
+    let api = API.get();
+    for region_idx in 0..=255 {
+        if let bios::Option::Some(region) = (api.memory_get_region)(region_idx) {
+            println!("Region {}: {}", region_idx, region);
+            found = true;
+        } else {
+            // Ran out of regions (we assume they are consecutive)
+            break;
+        }
+    }
+    if !found {
+        println!("None.");
+    }
+}
+
+/// Called when the "clear" command is executed.
+fn cmd_clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+        console.clear();
+    }
+}
+
+/// Called when the "fill" command is executed.
+fn cmd_fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+        console.clear();
+    }
+    let api = API.get();
+    let mode = (api.video_get_mode)();
+    let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
+        println!("Unable to get console size");
+        return;
+    };
+    // A range of printable ASCII compatible characters
+    let mut char_cycle = (' '..='~').cycle();
+    // Scroll two screen fulls
+    for _row in 0..height * 2 {
+        for _col in 0..width {
+            print!("{}", char_cycle.next().unwrap());
+        }
+    }
 }
 
 /// Called when we have a panic.
@@ -320,9 +315,9 @@ pub extern "C" fn main(api: &'static bios::Api) -> ! {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("PANIC!\n{:#?}", info);
-    use core::sync::atomic::{self, Ordering};
+    let api = API.get();
     loop {
-        atomic::compiler_fence(Ordering::SeqCst);
+        (api.power_idle)();
     }
 }
 

@@ -1,6 +1,7 @@
 # Neotron OS
 
-This is the Neotron OS. It will run on any system which can execute ARM Thumb v7-M instructions, and has an implementation of the [Neotron BIOS](https://github.com/neotron-compute/Neotron-BIOS).
+This is the Neotron OS. It will run on any system which has an implementation
+of the [Neotron BIOS](https://github.com/neotron-compute/Neotron-Common-BIOS).
 
 ## Status
 
@@ -24,22 +25,29 @@ OpenOCD or some other programming tool running for your particular board. See
 your BIOS instructions for more details.
 
 We compile one version of Neotron OS, but we link it three times to produce
-three binaries:
+three different binaries:
 
 * `flash0002` - is linked to run from address `0x0002_0000`
 * `flash1002` - is linked to run from address `0x1002_0000`
 * `flash0802` - is linked to run from address `0x0802_0000`
 
-```
+```console
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
-$ git submodule update --init
-$ cargo build --release
-$ ls ./target/thumbv6m-none-eabi/release/flash{10,08,00}02
+$ cargo build --target thumbv6m-none-eabi --release --bins
+$ ls ./target/thumbv6m-none-eabi/release/flash*02
 ./target/thumbv6m-none-eabi/release/flash0002 ./target/thumbv6m-none-eabi/release/flash0802 ./target/thumbv6m-none-eabi/release/flash1002
 ```
 
 Your BIOS should tell you which one you want and how to load it onto your system.
+
+You can also build a *shared object* to load into a Windows/Linux/macOS application.
+
+```console
+$ cargo build --lib
+$ ls ./target/debug/*.so
+./target/debug/libneotron_os.so
+```
 
 ## Changelog
 
