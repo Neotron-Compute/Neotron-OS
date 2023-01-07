@@ -51,10 +51,7 @@ $ ls ./target/debug/*.so
 
 ## Changelog
 
-### Unreleased Changes ([Source](https://github.com/neotron-compute/Neotron-OS/tree/master))
-
-* Basic `println!` to the text buffer.
-* Re-arranged linker script setup
+See [`CHANGELOG.md`](./CHANGELOG.md)
 
 ## Licence
 
