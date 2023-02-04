@@ -42,11 +42,11 @@ static OS_MENU: menu::Menu<Ctx> = menu::Menu {
     items: &[
         &menu::Item {
             item_type: menu::ItemType::Callback {
-                function: cmd_mem,
+                function: cmd_lshw,
                 parameters: &[],
             },
-            command: "mem",
-            help: Some("Show memory regions"),
+            command: "lshw",
+            help: Some("List all the hardware"),
         },
         &menu::Item {
             item_type: menu::ItemType::Callback {
@@ -309,22 +309,90 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
     }
 }
 
-/// Called when the "mem" command is executed.
-fn cmd_mem(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
-    println!("Memory Regions:");
-    let mut found = false;
+/// Called when the "lshw" command is executed.
+fn cmd_lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
     let api = API.get();
-    for region_idx in 0..=255 {
+    let mut found = false;
+
+    println!("Memory regions:");
+    for region_idx in 0..=255u8 {
         if let bios::Option::Some(region) = (api.memory_get_region)(region_idx) {
-            println!("Region {}: {}", region_idx, region);
+            println!("  {}: {}", region_idx, region);
             found = true;
-        } else {
-            // Ran out of regions (we assume they are consecutive)
-            break;
         }
     }
     if !found {
-        println!("None.");
+        println!("  None");
+    }
+
+    println!();
+    found = false;
+
+    println!("Serial Devices:");
+    for dev_idx in 0..=255u8 {
+        if let bios::Option::Some(device_info) = (api.serial_get_info)(dev_idx) {
+            println!("  {}: {:?}", dev_idx, device_info);
+            found = true;
+        }
+    }
+    if !found {
+        println!("  None");
+    }
+
+    println!();
+    found = false;
+
+    println!("Block Devices:");
+    for dev_idx in 0..=255u8 {
+        if let bios::Option::Some(device_info) = (api.block_dev_get_info)(dev_idx) {
+            println!("  {}: {:?}", dev_idx, device_info);
+            found = true;
+        }
+    }
+    if !found {
+        println!("  None");
+    }
+
+    println!();
+    found = false;
+
+    println!("I2C Buses:");
+    for dev_idx in 0..=255u8 {
+        if let bios::Option::Some(device_info) = (api.i2c_bus_get_info)(dev_idx) {
+            println!("  {}: {:?}", dev_idx, device_info);
+            found = true;
+        }
+    }
+    if !found {
+        println!("  None");
+    }
+
+    println!();
+    found = false;
+
+    println!("Neotron Bus Devices:");
+    for dev_idx in 0..=255u8 {
+        if let bios::Option::Some(device_info) = (api.bus_get_info)(dev_idx) {
+            println!("  {}: {:?}", dev_idx, device_info);
+            found = true;
+        }
+    }
+    if !found {
+        println!("  None");
+    }
+
+    println!();
+    found = false;
+
+    println!("Audio Mixers:");
+    for dev_idx in 0..=255u8 {
+        if let bios::Result::Ok(device_info) = (api.audio_mixer_channel_get_info)(dev_idx) {
+            println!("  {}: {:?}", dev_idx, device_info);
+            found = true;
+        }
+    }
+    if !found {
+        println!("  None");
     }
 }
 
