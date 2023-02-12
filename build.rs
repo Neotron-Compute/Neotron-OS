@@ -23,6 +23,11 @@ fn main() {
         println!("cargo:rustc-env=OS_VERSION={}", env!("CARGO_PKG_VERSION"));
     }
 
-    #[cfg(target_os = "macos")]
-    println!("cargo:rustc-link-lib=c");
+    if Ok("macos") == env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        println!("cargo:rustc-link-lib=c");
+    }
+
+    if Ok("windows") == env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        println!("cargo:rustc-link-lib=dylib=msvcrt");
+    }
 }
