@@ -386,7 +386,7 @@ fn cmd_lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
 
     println!("Audio Mixers:");
     for dev_idx in 0..=255u8 {
-        if let bios::Result::Ok(device_info) = (api.audio_mixer_channel_get_info)(dev_idx) {
+        if let bios::Option::Some(device_info) = (api.audio_mixer_channel_get_info)(dev_idx) {
             println!("  {}: {:?}", dev_idx, device_info);
             found = true;
         }
