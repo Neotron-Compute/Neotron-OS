@@ -81,6 +81,14 @@ static OS_MENU: menu::Menu<Ctx> = menu::Menu {
             command: "config",
             help: Some("Handle non-volatile OS configuration"),
         },
+        &menu::Item {
+            item_type: menu::ItemType::Callback {
+                function: cmd_kbtest,
+                parameters: &[],
+            },
+            command: "kbtest",
+            help: Some("Test the keyboard (press ESC to quit)"),
+        },
     ],
     entry: None,
     exit: None,
@@ -162,6 +170,7 @@ impl core::fmt::Write for SerialConsole {
 
 struct Ctx {
     config: config::Config,
+    keyboard: pc_keyboard::EventDecoder<pc_keyboard::layouts::AnyLayout>,
 }
 
 impl core::fmt::Write for Ctx {
@@ -253,12 +262,14 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
     println!("Welcome to {}!", OS_VERSION);
     println!("Copyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022");
 
-    let ctx = Ctx { config };
+    let ctx = Ctx {
+        config,
+        keyboard: pc_keyboard::EventDecoder::new(
+            pc_keyboard::layouts::AnyLayout::Uk105Key(pc_keyboard::layouts::Uk105Key),
+            pc_keyboard::HandleControl::MapLettersToUnicode,
+        ),
+    };
 
-    let mut keyboard = pc_keyboard::EventDecoder::new(
-        pc_keyboard::layouts::AnyLayout::Uk105Key(pc_keyboard::layouts::Uk105Key),
-        pc_keyboard::HandleControl::MapLettersToUnicode,
-    );
     let mut buffer = [0u8; 256];
     let mut menu = menu::Runner::new(&OS_MENU, &mut buffer, ctx);
 
@@ -270,7 +281,7 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
                     state: pc_keyboard::KeyState::Down,
                 };
                 if let Some(pc_keyboard::DecodedKey::Unicode(mut ch)) =
-                    keyboard.process_keyevent(pckb_ev)
+                    menu.context.keyboard.process_keyevent(pckb_ev)
                 {
                     if ch == '\n' {
                         ch = '\r';
@@ -288,7 +299,7 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
                     state: pc_keyboard::KeyState::Up,
                 };
                 if let Some(pc_keyboard::DecodedKey::Unicode(ch)) =
-                    keyboard.process_keyevent(pckb_ev)
+                    menu.context.keyboard.process_keyevent(pckb_ev)
                 {
                     let mut buffer = [0u8; 6];
                     let s = ch.encode_utf8(&mut buffer);
@@ -310,7 +321,7 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
 }
 
 /// Called when the "lshw" command is executed.
-fn cmd_lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+fn cmd_lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     let api = API.get();
     let mut found = false;
 
@@ -397,14 +408,14 @@ fn cmd_lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
 }
 
 /// Called when the "clear" command is executed.
-fn cmd_clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+fn cmd_clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
         console.clear();
     }
 }
 
 /// Called when the "fill" command is executed.
-fn cmd_fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _context: &mut Ctx) {
+fn cmd_fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
         console.clear();
     }
@@ -425,19 +436,19 @@ fn cmd_fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
 }
 
 /// Called when the "config" command is executed.
-fn cmd_config(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], context: &mut Ctx) {
+fn cmd_config(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
     let command = args.get(0).cloned().unwrap_or("print");
     match command {
         "reset" => match config::Config::load() {
             Ok(new_config) => {
-                context.config = new_config;
+                ctx.config = new_config;
                 println!("Loaded OK.");
             }
             Err(e) => {
                 println!("Error loading; {}", e);
             }
         },
-        "save" => match context.config.save() {
+        "save" => match ctx.config.save() {
             Ok(_) => {
                 println!("Saved OK.");
             }
@@ -447,11 +458,11 @@ fn cmd_config(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], c
         },
         "vga" => match args.get(1).cloned() {
             Some("on") => {
-                context.config.set_vga_console(true);
+                ctx.config.set_vga_console(true);
                 println!("VGA now on");
             }
             Some("off") => {
-                context.config.set_vga_console(false);
+                ctx.config.set_vga_console(false);
                 println!("VGA now off");
             }
             _ => {
@@ -461,19 +472,19 @@ fn cmd_config(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], c
         "serial" => match (args.get(1).cloned(), args.get(1).map(|s| s.parse::<u32>())) {
             (_, Some(Ok(baud))) => {
                 println!("Turning serial console on at {} bps", baud);
-                context.config.set_serial_console_on(baud);
+                ctx.config.set_serial_console_on(baud);
             }
             (Some("off"), _) => {
                 println!("Turning serial console off");
-                context.config.set_serial_console_off();
+                ctx.config.set_serial_console_off();
             }
             _ => {
                 println!("Give off or an integer as argument");
             }
         },
         "print" => {
-            println!("VGA   : {}", context.config.get_vga_console());
-            match context.config.get_serial_console() {
+            println!("VGA   : {}", ctx.config.get_vga_console());
+            match ctx.config.get_serial_console() {
                 None => {
                     println!("Serial: off");
                 }
@@ -491,6 +502,47 @@ fn cmd_config(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], c
             println!("config vga off - turn VGA off");
             println!("config serial off - turn serial console off");
             println!("config serial <baud> - turn serial console on with given baud rate");
+        }
+    }
+}
+
+/// Called when the "kbtest" command is executed.
+fn cmd_kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
+    let api = API.get();
+    loop {
+        match (api.hid_get_event)() {
+            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyPress(code))) => {
+                let pckb_ev = pc_keyboard::KeyEvent {
+                    code,
+                    state: pc_keyboard::KeyState::Down,
+                };
+                if let Some(ev) = ctx.keyboard.process_keyevent(pckb_ev) {
+                    println!("Code={code:?} State=Down Decoded={ev:?}");
+                } else {
+                    println!("Code={code:?} State=Down Decoded=None");
+                }
+                if code == pc_keyboard::KeyCode::Escape {
+                    break;
+                }
+            }
+            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyRelease(code))) => {
+                let pckb_ev = pc_keyboard::KeyEvent {
+                    code,
+                    state: pc_keyboard::KeyState::Up,
+                };
+                if let Some(ev) = ctx.keyboard.process_keyevent(pckb_ev) {
+                    println!("Code={code:?} State=Up Decoded={ev:?}");
+                } else {
+                    println!("Code={code:?} State=Up Decoded=None");
+                }
+            }
+            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::MouseInput(_ignore))) => {}
+            bios::Result::Ok(bios::Option::None) => {
+                // Do nothing
+            }
+            bios::Result::Err(e) => {
+                println!("Failed to get HID events: {:?}", e);
+            }
         }
     }
 }
