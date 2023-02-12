@@ -12,7 +12,6 @@
 use core::fmt::Write;
 use neotron_common_bios as bios;
 
-mod charmap;
 mod config;
 mod vgaconsole;
 
@@ -243,20 +242,54 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
         println!("None.");
     }
 
-    let mut keyboard = charmap::UKEnglish::new();
+    let mut keyboard = pc_keyboard::EventDecoder::new(
+        pc_keyboard::layouts::AnyLayout::Uk105Key(pc_keyboard::layouts::Uk105Key),
+        pc_keyboard::HandleControl::MapLettersToUnicode,
+    );
     let mut buffer = [0u8; 256];
     let mut menu = menu::Runner::new(&OS_MENU, &mut buffer, Ctx);
 
     loop {
-        if let neotron_common_bios::Result::Ok(neotron_common_bios::Option::Some(ev)) =
-            (api.hid_get_event)()
-        {
-            if let Some(charmap::Keypress::Unicode(ch)) = keyboard.handle_event(ev) {
-                let mut buffer = [0u8; 6];
-                let s = ch.encode_utf8(&mut buffer);
-                for b in s.as_bytes() {
-                    menu.input_byte(*b);
+        match (api.hid_get_event)() {
+            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyPress(code))) => {
+                let pckb_ev = pc_keyboard::KeyEvent {
+                    code,
+                    state: pc_keyboard::KeyState::Down,
+                };
+                if let Some(pc_keyboard::DecodedKey::Unicode(mut ch)) =
+                    keyboard.process_keyevent(pckb_ev)
+                {
+                    if ch == '\n' {
+                        ch = '\r';
+                    }
+                    let mut buffer = [0u8; 6];
+                    let s = ch.encode_utf8(&mut buffer);
+                    for b in s.as_bytes() {
+                        menu.input_byte(*b);
+                    }
                 }
+            }
+            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyRelease(code))) => {
+                let pckb_ev = pc_keyboard::KeyEvent {
+                    code,
+                    state: pc_keyboard::KeyState::Up,
+                };
+                if let Some(pc_keyboard::DecodedKey::Unicode(ch)) =
+                    keyboard.process_keyevent(pckb_ev)
+                {
+                    let mut buffer = [0u8; 6];
+                    let s = ch.encode_utf8(&mut buffer);
+                    for b in s.as_bytes() {
+                        menu.input_byte(*b);
+                    }
+                }
+            }
+            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::MouseInput(_ignore))) => {}
+            bios::Result::Ok(bios::Option::None) => {
+                // Do nothing
+            }
+            bios::Result::Err(e) => {
+                println!("Failed to get HID events: {:?}", e);
             }
         }
         (api.power_idle)();
