@@ -26,4 +26,8 @@ fn main() {
     if Ok("macos") == env::var("CARGO_CFG_TARGET_OS").as_deref() {
         println!("cargo:rustc-link-lib=c");
     }
+
+    if Ok("windows") == env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        println!("cargo:rustc-link-lib=dylib=msvcrt");
+    }
 }
