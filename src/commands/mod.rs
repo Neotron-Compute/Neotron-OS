@@ -7,6 +7,7 @@ pub use super::Ctx;
 mod config;
 mod hardware;
 mod input;
+mod ram;
 mod screen;
 
 pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
@@ -14,6 +15,10 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
     items: &[
         &config::COMMAND_ITEM,
         &hardware::LSHW_ITEM,
+        &ram::HEXDUMP_ITEM,
+        &ram::LOAD_ITEM,
+        #[cfg(target_os = "none")]
+        &ram::RUN_ITEM,
         &screen::CLEAR_ITEM,
         &screen::FILL_ITEM,
         &input::KBTEST_ITEM,
