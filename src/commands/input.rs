@@ -2,8 +2,17 @@
 
 use crate::{bios, println, Ctx, API};
 
+pub static KBTEST_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: kbtest,
+        parameters: &[],
+    },
+    command: "input_kbtest",
+    help: Some("Test the keyboard (press ESC to quit)"),
+};
+
 /// Called when the "kbtest" command is executed.
-pub fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
+fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
     let api = API.get();
     loop {
         match (api.hid_get_event)() {

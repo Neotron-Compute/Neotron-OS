@@ -2,8 +2,17 @@
 
 use crate::{bios, println, Ctx, API};
 
-/// Called when the "lshw" command is executed.
-pub fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
+pub static LSHW_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: bioshw,
+        parameters: &[],
+    },
+    command: "bioshw",
+    help: Some("List all the BIOS hardware"),
+};
+
+/// Called when the "bioshw" command is executed.
+fn bioshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     let api = API.get();
     let mut found = false;
 
@@ -18,13 +27,15 @@ pub fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
         println!("  None");
     }
 
-    println!();
     found = false;
 
     println!("Serial Devices:");
     for dev_idx in 0..=255u8 {
         if let bios::Option::Some(device_info) = (api.serial_get_info)(dev_idx) {
-            println!("  {}: {:?}", dev_idx, device_info);
+            println!(
+                "  {}: {} {:?}",
+                dev_idx, device_info.name, device_info.device_type
+            );
             found = true;
         }
     }
@@ -32,13 +43,19 @@ pub fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
         println!("  None");
     }
 
-    println!();
     found = false;
 
     println!("Block Devices:");
     for dev_idx in 0..=255u8 {
         if let bios::Option::Some(device_info) = (api.block_dev_get_info)(dev_idx) {
-            println!("  {}: {:?}", dev_idx, device_info);
+            println!(
+                "  {}: {} {:?} bs={} size={} MiB",
+                dev_idx,
+                device_info.name,
+                device_info.device_type,
+                device_info.block_size,
+                (device_info.num_blocks * u64::from(device_info.block_size)) / (1024 * 1024)
+            );
             found = true;
         }
     }
@@ -46,7 +63,6 @@ pub fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
         println!("  None");
     }
 
-    println!();
     found = false;
 
     println!("I2C Buses:");
@@ -60,7 +76,6 @@ pub fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
         println!("  None");
     }
 
-    println!();
     found = false;
 
     println!("Neotron Bus Devices:");
@@ -74,7 +89,6 @@ pub fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _c
         println!("  None");
     }
 
-    println!();
     found = false;
 
     println!("Audio Mixers:");

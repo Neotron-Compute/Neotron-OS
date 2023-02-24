@@ -2,15 +2,33 @@
 
 use crate::{print, println, Ctx, API, VGA_CONSOLE};
 
+pub static CLEAR_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: clear,
+        parameters: &[],
+    },
+    command: "screen_clear",
+    help: Some("Clear the screen"),
+};
+
+pub static FILL_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: fill,
+        parameters: &[],
+    },
+    command: "screen_fill",
+    help: Some("Fill the screen with characters"),
+};
+
 /// Called when the "clear" command is executed.
-pub fn clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
+fn clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
         console.clear();
     }
 }
 
 /// Called when the "fill" command is executed.
-pub fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
+fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
         console.clear();
     }

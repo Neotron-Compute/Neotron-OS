@@ -2,8 +2,26 @@
 
 use crate::{config, println, Ctx};
 
+pub static COMMAND_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: command,
+        parameters: &[
+            menu::Parameter::Optional {
+                parameter_name: "command",
+                help: Some("Which operation to perform (try help)"),
+            },
+            menu::Parameter::Optional {
+                parameter_name: "value",
+                help: Some("new value for the setting"),
+            },
+        ],
+    },
+    command: "config",
+    help: Some("Handle non-volatile OS configuration"),
+};
+
 /// Called when the "config" command is executed.
-pub fn command(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
+fn command(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
     let command = args.get(0).cloned().unwrap_or("print");
     match command {
         "reset" => match config::Config::load() {
