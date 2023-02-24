@@ -9,10 +9,10 @@
 #![no_std]
 
 // Imports
-use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
 use neotron_common_bios as bios;
 
+mod commands;
 mod config;
 mod vgaconsole;
 
@@ -37,63 +37,6 @@ static mut SERIAL_CONSOLE: Option<SerialConsole> = None;
 /// If so, don't panic if a serial write fails.
 static IS_PANIC: AtomicBool = AtomicBool::new(false);
 
-static OS_MENU: menu::Menu<Ctx> = menu::Menu {
-    label: "root",
-    items: &[
-        &menu::Item {
-            item_type: menu::ItemType::Callback {
-                function: cmd_lshw,
-                parameters: &[],
-            },
-            command: "lshw",
-            help: Some("List all the hardware"),
-        },
-        &menu::Item {
-            item_type: menu::ItemType::Callback {
-                function: cmd_clear,
-                parameters: &[],
-            },
-            command: "clear",
-            help: Some("Clear the screen"),
-        },
-        &menu::Item {
-            item_type: menu::ItemType::Callback {
-                function: cmd_fill,
-                parameters: &[],
-            },
-            command: "fill",
-            help: Some("Fill the screen with characters"),
-        },
-        &menu::Item {
-            item_type: menu::ItemType::Callback {
-                function: cmd_config,
-                parameters: &[
-                    menu::Parameter::Optional {
-                        parameter_name: "command",
-                        help: Some("Which operation to perform (try help)"),
-                    },
-                    menu::Parameter::Optional {
-                        parameter_name: "value",
-                        help: Some("new value for the setting"),
-                    },
-                ],
-            },
-            command: "config",
-            help: Some("Handle non-volatile OS configuration"),
-        },
-        &menu::Item {
-            item_type: menu::ItemType::Callback {
-                function: cmd_kbtest,
-                parameters: &[],
-            },
-            command: "kbtest",
-            help: Some("Test the keyboard (press ESC to quit)"),
-        },
-    ],
-    entry: None,
-    exit: None,
-};
-
 // ===========================================================================
 // Macros
 // ===========================================================================
@@ -102,10 +45,14 @@ static OS_MENU: menu::Menu<Ctx> = menu::Menu {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+        if let Some(ref mut console) = unsafe { &mut crate::VGA_CONSOLE } {
+            #[allow(unused)]
+            use core::fmt::Write as _;
             write!(console, $($arg)*).unwrap();
         }
-        if let Some(ref mut console) = unsafe { &mut SERIAL_CONSOLE } {
+        if let Some(ref mut console) = unsafe { &mut crate::SERIAL_CONSOLE } {
+            #[allow(unused)]
+            use core::fmt::Write as _;
             write!(console, $($arg)*).unwrap();
         }
     };
@@ -114,10 +61,10 @@ macro_rules! print {
 /// Prints to the screen and puts a new-line on the end
 #[macro_export]
 macro_rules! println {
-    () => (print!("\n"));
+    () => (crate::print!("\n"));
     ($($arg:tt)*) => {
-        print!($($arg)*);
-        print!("\n");
+        crate::print!($($arg)*);
+        crate::print!("\n");
     };
 }
 
@@ -168,7 +115,7 @@ impl core::fmt::Write for SerialConsole {
     }
 }
 
-struct Ctx {
+pub struct Ctx {
     config: config::Config,
     keyboard: pc_keyboard::EventDecoder<pc_keyboard::layouts::AnyLayout>,
 }
@@ -271,7 +218,7 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
     };
 
     let mut buffer = [0u8; 256];
-    let mut menu = menu::Runner::new(&OS_MENU, &mut buffer, ctx);
+    let mut menu = menu::Runner::new(&commands::OS_MENU, &mut buffer, ctx);
 
     loop {
         match (api.hid_get_event)() {
@@ -317,233 +264,6 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
             }
         }
         (api.power_idle)();
-    }
-}
-
-/// Called when the "lshw" command is executed.
-fn cmd_lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    let api = API.get();
-    let mut found = false;
-
-    println!("Memory regions:");
-    for region_idx in 0..=255u8 {
-        if let bios::Option::Some(region) = (api.memory_get_region)(region_idx) {
-            println!("  {}: {}", region_idx, region);
-            found = true;
-        }
-    }
-    if !found {
-        println!("  None");
-    }
-
-    println!();
-    found = false;
-
-    println!("Serial Devices:");
-    for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.serial_get_info)(dev_idx) {
-            println!("  {}: {:?}", dev_idx, device_info);
-            found = true;
-        }
-    }
-    if !found {
-        println!("  None");
-    }
-
-    println!();
-    found = false;
-
-    println!("Block Devices:");
-    for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.block_dev_get_info)(dev_idx) {
-            println!("  {}: {:?}", dev_idx, device_info);
-            found = true;
-        }
-    }
-    if !found {
-        println!("  None");
-    }
-
-    println!();
-    found = false;
-
-    println!("I2C Buses:");
-    for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.i2c_bus_get_info)(dev_idx) {
-            println!("  {}: {:?}", dev_idx, device_info);
-            found = true;
-        }
-    }
-    if !found {
-        println!("  None");
-    }
-
-    println!();
-    found = false;
-
-    println!("Neotron Bus Devices:");
-    for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.bus_get_info)(dev_idx) {
-            println!("  {}: {:?}", dev_idx, device_info);
-            found = true;
-        }
-    }
-    if !found {
-        println!("  None");
-    }
-
-    println!();
-    found = false;
-
-    println!("Audio Mixers:");
-    for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.audio_mixer_channel_get_info)(dev_idx) {
-            println!("  {}: {:?}", dev_idx, device_info);
-            found = true;
-        }
-    }
-    if !found {
-        println!("  None");
-    }
-}
-
-/// Called when the "clear" command is executed.
-fn cmd_clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
-        console.clear();
-    }
-}
-
-/// Called when the "fill" command is executed.
-fn cmd_fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
-        console.clear();
-    }
-    let api = API.get();
-    let mode = (api.video_get_mode)();
-    let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
-        println!("Unable to get console size");
-        return;
-    };
-    // A range of printable ASCII compatible characters
-    let mut char_cycle = (' '..='~').cycle();
-    // Scroll two screen fulls
-    for _row in 0..height * 2 {
-        for _col in 0..width {
-            print!("{}", char_cycle.next().unwrap());
-        }
-    }
-}
-
-/// Called when the "config" command is executed.
-fn cmd_config(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
-    let command = args.get(0).cloned().unwrap_or("print");
-    match command {
-        "reset" => match config::Config::load() {
-            Ok(new_config) => {
-                ctx.config = new_config;
-                println!("Loaded OK.");
-            }
-            Err(e) => {
-                println!("Error loading; {}", e);
-            }
-        },
-        "save" => match ctx.config.save() {
-            Ok(_) => {
-                println!("Saved OK.");
-            }
-            Err(e) => {
-                println!("Error saving: {}", e);
-            }
-        },
-        "vga" => match args.get(1).cloned() {
-            Some("on") => {
-                ctx.config.set_vga_console(true);
-                println!("VGA now on");
-            }
-            Some("off") => {
-                ctx.config.set_vga_console(false);
-                println!("VGA now off");
-            }
-            _ => {
-                println!("Give on or off as argument");
-            }
-        },
-        "serial" => match (args.get(1).cloned(), args.get(1).map(|s| s.parse::<u32>())) {
-            (_, Some(Ok(baud))) => {
-                println!("Turning serial console on at {} bps", baud);
-                ctx.config.set_serial_console_on(baud);
-            }
-            (Some("off"), _) => {
-                println!("Turning serial console off");
-                ctx.config.set_serial_console_off();
-            }
-            _ => {
-                println!("Give off or an integer as argument");
-            }
-        },
-        "print" => {
-            println!("VGA   : {}", ctx.config.get_vga_console());
-            match ctx.config.get_serial_console() {
-                None => {
-                    println!("Serial: off");
-                }
-                Some((_port, config)) => {
-                    println!("Serial: {} bps", config.data_rate_bps);
-                }
-            }
-        }
-        _ => {
-            println!("config print - print the config");
-            println!("config help - print this help text");
-            println!("config reset - load config from BIOS store");
-            println!("config save - save config to BIOS store");
-            println!("config vga on - turn VGA on");
-            println!("config vga off - turn VGA off");
-            println!("config serial off - turn serial console off");
-            println!("config serial <baud> - turn serial console on with given baud rate");
-        }
-    }
-}
-
-/// Called when the "kbtest" command is executed.
-fn cmd_kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
-    let api = API.get();
-    loop {
-        match (api.hid_get_event)() {
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyPress(code))) => {
-                let pckb_ev = pc_keyboard::KeyEvent {
-                    code,
-                    state: pc_keyboard::KeyState::Down,
-                };
-                if let Some(ev) = ctx.keyboard.process_keyevent(pckb_ev) {
-                    println!("Code={code:?} State=Down Decoded={ev:?}");
-                } else {
-                    println!("Code={code:?} State=Down Decoded=None");
-                }
-                if code == pc_keyboard::KeyCode::Escape {
-                    break;
-                }
-            }
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyRelease(code))) => {
-                let pckb_ev = pc_keyboard::KeyEvent {
-                    code,
-                    state: pc_keyboard::KeyState::Up,
-                };
-                if let Some(ev) = ctx.keyboard.process_keyevent(pckb_ev) {
-                    println!("Code={code:?} State=Up Decoded={ev:?}");
-                } else {
-                    println!("Code={code:?} State=Up Decoded=None");
-                }
-            }
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::MouseInput(_ignore))) => {}
-            bios::Result::Ok(bios::Option::None) => {
-                // Do nothing
-            }
-            bios::Result::Err(e) => {
-                println!("Failed to get HID events: {:?}", e);
-            }
-        }
     }
 }
 
