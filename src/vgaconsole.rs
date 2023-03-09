@@ -3,6 +3,8 @@
 //! Code for dealing with a VGA-style console, where there's a buffer of 16-bit
 //! values, each corresponding to a glyph and some attributes.
 
+use neotron_common_bios::video::{Attr, TextBackgroundColour, TextForegroundColour};
+
 #[derive(Debug)]
 pub struct VgaConsole {
     addr: *mut u8,
@@ -14,7 +16,11 @@ pub struct VgaConsole {
 
 impl VgaConsole {
     /// White on Black
-    const DEFAULT_ATTR: u8 = 15 << 3;
+    const DEFAULT_ATTR: Attr = Attr::new(
+        TextForegroundColour::WHITE,
+        TextBackgroundColour::BLACK,
+        false,
+    );
 
     pub fn new(addr: *mut u8, width: isize, height: isize) -> VgaConsole {
         VgaConsole {
@@ -60,17 +66,17 @@ impl VgaConsole {
         self.reset_cursor();
     }
 
-    fn write(&mut self, glyph: u8, attr: Option<u8>) {
+    fn write(&mut self, glyph: u8, attr: Option<Attr>) {
         self.write_at(self.row, self.col, glyph, attr);
     }
 
-    fn write_at(&mut self, row: isize, col: isize, glyph: u8, attr: Option<u8>) {
+    fn write_at(&mut self, row: isize, col: isize, glyph: u8, attr: Option<Attr>) {
         assert!(row < self.height, "{} >= {}?", row, self.height);
         assert!(col < self.width, "{} => {}?", col, self.width);
         let offset = ((row * self.width) + col) * 2;
         unsafe { core::ptr::write_volatile(self.addr.offset(offset), glyph) };
         if let Some(a) = attr {
-            unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), a) };
+            unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), a.0) };
         }
     }
 

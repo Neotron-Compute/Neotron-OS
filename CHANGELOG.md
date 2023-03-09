@@ -1,5 +1,10 @@
 # Change Log
 
+## v0.3.1
+
+* Add `hexdump`, `load` and `run` commands.
+* Set colour attributes correctly (White on Black only currently)
+
 ## v0.3.0
 
 * Updated to Neotron Common BIOS v0.8.0
