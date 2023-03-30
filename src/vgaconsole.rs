@@ -5,13 +5,13 @@
 
 use neotron_common_bios::video::{Attr, TextBackgroundColour, TextForegroundColour};
 
-#[derive(Debug)]
 pub struct VgaConsole {
     addr: *mut u8,
     width: isize,
     height: isize,
     row: isize,
     col: isize,
+    attr: Attr,
 }
 
 impl VgaConsole {
@@ -29,6 +29,7 @@ impl VgaConsole {
             height,
             row: 0,
             col: 0,
+            attr: Self::DEFAULT_ATTR,
         }
     }
 
@@ -60,24 +61,56 @@ impl VgaConsole {
     pub fn clear(&mut self) {
         for row in 0..self.height {
             for col in 0..self.width {
-                self.write_at(row, col, b' ', Some(Self::DEFAULT_ATTR));
+                self.write_at(row, col, b' ');
             }
         }
         self.reset_cursor();
     }
 
-    fn write(&mut self, glyph: u8, attr: Option<Attr>) {
-        self.write_at(self.row, self.col, glyph, attr);
+    pub fn write_bstr(&mut self, bstr: &[u8]) {
+        for b in bstr {
+            self.scroll_as_required();
+            match b {
+                0x08 => {
+                    // This is a backspace, so we go back one character (if we
+                    // can). We expect the caller to provide "\u{0008} \u{0008}"
+                    // to actually erase the char then move the cursor over it.
+                    if self.col > 0 {
+                        self.col -= 1;
+                    }
+                }
+                b'\r' => {
+                    self.col = 0;
+                }
+                b'\n' => {
+                    self.col = 0;
+                    self.move_char_down();
+                }
+                _ => {
+                    self.write(*b);
+                    self.move_char_right();
+                }
+            }
+        }
     }
 
-    fn write_at(&mut self, row: isize, col: isize, glyph: u8, attr: Option<Attr>) {
+    /// Set the default attribute for any future text.
+    pub fn set_attr(&mut self, attr: Attr) {
+        self.attr = attr;
+    }
+
+    /// Put a glyph at the next position on the screen.
+    fn write(&mut self, glyph: u8) {
+        self.write_at(self.row, self.col, glyph);
+    }
+
+    /// Put a glyph at a given position on the screen.
+    fn write_at(&mut self, row: isize, col: isize, glyph: u8) {
         assert!(row < self.height, "{} >= {}?", row, self.height);
         assert!(col < self.width, "{} => {}?", col, self.width);
         let offset = ((row * self.width) + col) * 2;
         unsafe { core::ptr::write_volatile(self.addr.offset(offset), glyph) };
-        if let Some(a) = attr {
-            unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), a.0) };
-        }
+        unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), self.attr.as_u8()) };
     }
 
     fn scroll_page(&mut self) {
@@ -91,7 +124,7 @@ impl VgaConsole {
             );
             // Blank the bottom line of the screen (rows[height-1]).
             for col in 0..self.width {
-                self.write_at(self.height - 1, col, b' ', Some(Self::DEFAULT_ATTR));
+                self.write_at(self.height - 1, col, b' ');
             }
         }
     }
@@ -260,7 +293,7 @@ impl core::fmt::Write for VgaConsole {
                     self.move_char_down();
                 }
                 _ => {
-                    self.write(Self::map_char_to_glyph(ch), None);
+                    self.write(Self::map_char_to_glyph(ch));
                     self.move_char_right();
                 }
             }
