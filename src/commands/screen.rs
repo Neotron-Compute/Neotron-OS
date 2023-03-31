@@ -22,6 +22,15 @@ pub static FILL_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Fill the screen with characters"),
 };
 
+pub static BENCH_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: bench,
+        parameters: &[],
+    },
+    command: "screen_bench",
+    help: Some("Time how long to put 1,000,000 characters on the screen, with scrolling."),
+};
+
 /// Called when the "clear" command is executed.
 fn clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
@@ -67,5 +76,26 @@ fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
             false,
         );
         console.set_attr(attr);
+    }
+}
+
+/// Called when the "bench" command is executed.
+fn bench(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
+    const NUM_CHARS: u64 = 1_000_000;
+    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+        let api = API.get();
+        let start = (api.time_ticks_get)();
+        console.clear();
+        let glyphs = &[b'x'];
+        for _idx in 0..NUM_CHARS {
+            console.write_bstr(glyphs);
+        }
+        let end = (api.time_ticks_get)();
+        let delta = end.0 - start.0;
+        let chars_per_second = (NUM_CHARS * (api.time_ticks_per_second)().0) / delta;
+        println!(
+            "{} chars in {} ticks, or {} chars per second",
+            NUM_CHARS, delta, chars_per_second
+        );
     }
 }
