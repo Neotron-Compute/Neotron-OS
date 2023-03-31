@@ -2,7 +2,7 @@
 
 use neotron_common_bios::video::{Attr, TextBackgroundColour, TextForegroundColour};
 
-use crate::{println, Ctx, API, VGA_CONSOLE};
+use crate::{print, println, Ctx, API, VGA_CONSOLE};
 
 pub static CLEAR_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -29,6 +29,15 @@ pub static BENCH_ITEM: menu::Item<Ctx> = menu::Item {
     },
     command: "screen_bench",
     help: Some("Time how long to put 1,000,000 characters on the screen, with scrolling."),
+};
+
+pub static MANDEL_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: mandel,
+        parameters: &[],
+    },
+    command: "screen_mandel",
+    help: Some("Calculate the Mandelbrot set"),
 };
 
 /// Called when the "clear" command is executed.
@@ -97,5 +106,42 @@ fn bench(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx:
             "{} chars in {} ticks, or {} chars per second",
             NUM_CHARS, delta, chars_per_second
         );
+    }
+}
+
+/// Called when the "mandel" command is executed.
+fn mandel(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
+    fn mandelbrot(cx: f64, cy: f64, max_loops: u32) -> u32 {
+        let mut x = cx;
+        let mut y = cy;
+        for i in 1..max_loops {
+            let x_squared = x * x;
+            let y_squared = y * y;
+            if x_squared + y_squared > 4.0 {
+                return i;
+            }
+            let x1 = x_squared - y_squared + cx;
+            let y1 = (2.0 * x * y) + cy;
+            x = x1;
+            y = y1;
+        }
+        0
+    }
+
+    let api = API.get();
+    let mode = (api.video_get_mode)();
+    let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
+        println!("Unable to get screen size");
+        return;
+    };
+
+    let glyphs = b" .,'~!^:;[/<&?oxOX#  ";
+    for y_pos in 0..height - 2 {
+        let y = (f64::from(y_pos) * 4.0 / f64::from(height)) - 2.0;
+        for x_pos in 0..width {
+            let x = (f64::from(x_pos) * 4.0 / f64::from(width)) - 2.0;
+            let result = mandelbrot(x, y, 20);
+            print!("{}", glyphs[result as usize] as char);
+        }
     }
 }
