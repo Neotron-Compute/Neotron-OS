@@ -23,6 +23,9 @@ mod vgaconsole;
 /// The OS version string
 const OS_VERSION: &str = concat!("Neotron OS, version ", env!("OS_VERSION"));
 
+/// Used to convert between POSIX epoch (for `chrono`) and Neotron epoch (for BIOS APIs).
+const SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH: i64 = 946684800;
+
 /// We store the API object supplied by the BIOS here
 static API: Api = Api::new();
 
@@ -72,25 +75,55 @@ macro_rules! println {
 // Local types
 // ===========================================================================
 
+/// Represents the API supplied by the BIOS
+struct Api {
+    bios: core::sync::atomic::AtomicPtr<bios::Api>,
+}
+
 impl Api {
+    /// Create a new object with a null pointer for the BIOS API.
     const fn new() -> Api {
         Api {
             bios: core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
         }
     }
 
-    fn store(&self, api: *const bios::Api) {
+    /// Change the stored BIOS API pointer.
+    ///
+    /// The pointed-at object must have static lifetime.
+    unsafe fn store(&self, api: *const bios::Api) {
         self.bios
             .store(api as *mut bios::Api, core::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Get the BIOS API as a reference.
+    ///
+    /// Will panic if the stored pointer is null.
     fn get(&self) -> &'static bios::Api {
-        unsafe { &*(self.bios.load(core::sync::atomic::Ordering::SeqCst) as *const bios::Api) }
+        let ptr = self.bios.load(core::sync::atomic::Ordering::SeqCst) as *const bios::Api;
+        let api_ref = unsafe { ptr.as_ref() }.expect("BIOS API should be non-null");
+        api_ref
     }
-}
 
-struct Api {
-    bios: core::sync::atomic::AtomicPtr<bios::Api>,
+    /// Get the current time
+    fn get_time(&self) -> chrono::NaiveDateTime {
+        let api = self.get();
+        let bios_time = (api.time_clock_get)();
+        let secs = i64::from(bios_time.secs) + SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH;
+        let nsecs = bios_time.nsecs;
+        chrono::NaiveDateTime::from_timestamp_opt(secs, nsecs).unwrap()
+    }
+
+    /// Set the current time
+    fn set_time(&self, timestamp: chrono::NaiveDateTime) {
+        let api = self.get();
+        let nanos = timestamp.timestamp_nanos();
+        let bios_time = bios::Time {
+            secs: ((nanos / 1_000_000_000) - SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH) as u32,
+            nsecs: (nanos % 1_000_000_000) as u32,
+        };
+        (api.time_clock_set)(bios_time);
+    }
 }
 
 /// Represents the serial port we can use as a text input/output device.
