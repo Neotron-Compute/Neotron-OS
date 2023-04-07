@@ -22,7 +22,9 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         #[cfg(target_os = "none")]
         &ram::RUN_ITEM,
         &screen::CLEAR_ITEM,
+        &screen::BENCH_ITEM,
         &screen::FILL_ITEM,
+        &screen::MANDEL_ITEM,
         &input::KBTEST_ITEM,
     ],
     entry: None,
