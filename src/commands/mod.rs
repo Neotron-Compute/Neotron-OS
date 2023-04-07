@@ -9,10 +9,12 @@ mod hardware;
 mod input;
 mod ram;
 mod screen;
+mod timedate;
 
 pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
     label: "root",
     items: &[
+        &timedate::DATE_ITEM,
         &config::COMMAND_ITEM,
         &hardware::LSHW_ITEM,
         &ram::HEXDUMP_ITEM,
