@@ -4,6 +4,7 @@
 
 pub use super::Ctx;
 
+mod block;
 mod config;
 mod hardware;
 mod input;
@@ -16,6 +17,8 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
     items: &[
         &timedate::DATE_ITEM,
         &config::COMMAND_ITEM,
+        &block::LSBLK_ITEM,
+        &block::READ_ITEM,
         &hardware::LSHW_ITEM,
         &ram::HEXDUMP_ITEM,
         &ram::LOAD_ITEM,
