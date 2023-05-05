@@ -1,5 +1,11 @@
 # Change Log
 
+## Unrelease changes
+
+* Add `date` command.
+* Add `lsblk` and `blkread` commands.
+* Renamed `bioshw` to `lshw`
+
 ## v0.3.1
 
 * Add `hexdump`, `load` and `run` commands.

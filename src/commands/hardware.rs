@@ -4,15 +4,15 @@ use crate::{bios, println, Ctx, API};
 
 pub static LSHW_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
-        function: bioshw,
+        function: lshw,
         parameters: &[],
     },
-    command: "bioshw",
+    command: "lshw",
     help: Some("List all the BIOS hardware"),
 };
 
-/// Called when the "bioshw" command is executed.
-fn bioshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
+/// Called when the "lshw" command is executed.
+fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     let api = API.get();
     let mut found = false;
 
