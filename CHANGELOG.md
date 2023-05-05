@@ -1,6 +1,8 @@
 # Change Log
 
-## Unrelease changes
+## Unreleased changes
+
+## v0.3.2
 
 * Add `date` command.
 * Add `lsblk` and `blkread` commands.
