@@ -1,7 +1,7 @@
 [package]
 name = "neotron-os"
-version = "0.3.1"
-authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>"]
+version = "0.3.2"
+authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>", "The Neotron Developers"]
 edition = "2018"
 description = "The Neotron Operating System"
 license = "GPL-3.0-or-later"
