@@ -12,19 +12,23 @@ repository = "https://github.com/neotron-compute/Neotron-OS"
 name = "flash1002"
 test = false
 bench = false
+required-features = ["defmt-log"]
 
 [[bin]]
 name = "flash0802"
 test = false
 bench = false
+required-features = ["defmt-log"]
 
 [[bin]]
 name = "flash0002"
 test = false
 bench = false
+required-features = ["defmt-log"]
 
 [lib]
 crate-type = ["rlib", "cdylib"]
+required-features = ["native-log"]
 
 [profile.release]
 lto = true
@@ -44,4 +48,8 @@ postcard = "0.5"
 serde = { version = "1.0", default-features = false }
 menu = "0.3"
 chrono = { version = "0.4", default-features = false }
-embedded-sdmmc = { git = "https://github.com/rust-embedded-community/embedded-sdmmc-rs.git", default-features = false, features = ["defmt-log"] }
+embedded-sdmmc = { git = "https://github.com/rust-embedded-community/embedded-sdmmc-rs.git", default-features = false }
+
+[features]
+native-log = ["embedded-sdmmc/log"]
+defmt-log = ["embedded-sdmmc/defmt-log"]

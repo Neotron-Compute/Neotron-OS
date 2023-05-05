@@ -34,7 +34,7 @@ three different binaries:
 ```console
 $ git clone https://github.com/neotron-compute/Neotron-OS.git
 $ cd Neotron-OS
-$ cargo build --target thumbv6m-none-eabi --release --bins
+$ cargo build --target thumbv6m-none-eabi --release --bins --features=defmt-log
 $ ls ./target/thumbv6m-none-eabi/release/flash*02
 ./target/thumbv6m-none-eabi/release/flash0002 ./target/thumbv6m-none-eabi/release/flash0802 ./target/thumbv6m-none-eabi/release/flash1002
 ```
@@ -44,7 +44,7 @@ Your BIOS should tell you which one you want and how to load it onto your system
 You can also build a *shared object* to load into a Windows/Linux/macOS application.
 
 ```console
-$ cargo build --lib
+$ cargo build --lib --features=native-log
 $ ls ./target/debug/*.so
 ./target/debug/libneotron_os.so
 ```
