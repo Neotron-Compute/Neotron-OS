@@ -14,6 +14,18 @@ pub static DIR_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Dir the root directory on block device 0"),
 };
 
+pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: load,
+        parameters: &[menu::Parameter::Mandatory {
+            parameter_name: "file",
+            help: Some("The file to load"),
+        }],
+    },
+    command: "load",
+    help: Some("Load a file into the application area"),
+};
+
 struct BiosBlock();
 
 impl embedded_sdmmc::BlockDevice for BiosBlock {
@@ -91,7 +103,7 @@ impl embedded_sdmmc::TimeSource for BiosTime {
     }
 }
 
-/// Called when the "lsblk" command is executed.
+/// Called when the "dir" command is executed.
 fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     fn work() -> Result<(), embedded_sdmmc::Error<bios::Error>> {
         println!("Listing files on Block Device 0, /");
@@ -144,6 +156,41 @@ fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &
     }
 
     match work() {
+        Ok(_) => {}
+        Err(e) => {
+            println!("Error: {:?}", e);
+        }
+    }
+}
+
+/// Called when the "load" command is executed.
+#[cfg(target_os = "none")]
+fn load(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _ctx: &mut Ctx) {
+    fn work(args: &[&str]) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
+        println!("Loading /{} from Block Device 0", args[0]);
+        let bios_block = BiosBlock();
+        let time = BiosTime();
+        let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
+        // Open the first partition
+        let mut volume = mgr.get_volume(VolumeIdx(0))?;
+        let root_dir = mgr.open_root_dir(&volume)?;
+        let mut file = mgr.open_file_in_dir(
+            &mut volume,
+            &root_dir,
+            args[0],
+            embedded_sdmmc::Mode::ReadOnly,
+        )?;
+        let file_length = file.length();
+        // Application space starts 4K into Cortex-M SRAM
+        const APPLICATION_START_ADDR: usize = 0x2000_1000;
+        let application_ram: &'static mut [u8] = unsafe {
+            core::slice::from_raw_parts_mut(APPLICATION_START_ADDR as *mut u8, file_length as usize)
+        };
+        mgr.read(&mut volume, &mut file, application_ram)?;
+        Ok(())
+    }
+
+    match work(args) {
         Ok(_) => {}
         Err(e) => {
             println!("Error: {:?}", e);

@@ -23,9 +23,10 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         &fs::DIR_ITEM,
         &hardware::LSHW_ITEM,
         &ram::HEXDUMP_ITEM,
-        &ram::LOAD_ITEM,
         #[cfg(target_os = "none")]
         &ram::RUN_ITEM,
+        #[cfg(target_os = "none")]
+        &fs::LOAD_ITEM,
         &screen::CLEAR_ITEM,
         &screen::BENCH_ITEM,
         &screen::FILL_ITEM,
