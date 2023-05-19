@@ -14,6 +14,7 @@ pub static DIR_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Dir the root directory on block device 0"),
 };
 
+#[cfg(target_os = "none")]
 pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
         function: load,

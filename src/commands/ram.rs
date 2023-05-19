@@ -87,8 +87,10 @@ pub struct Api {
     pub print: extern "C" fn(data: *const u8, len: usize),
 }
 
+#[allow(unused)]
 static CALLBACK_TABLE: Api = Api { print: print_fn };
 
+#[allow(unused)]
 extern "C" fn print_fn(data: *const u8, len: usize) {
     let slice = unsafe { core::slice::from_raw_parts(data, len) };
     if let Ok(s) = core::str::from_utf8(slice) {
