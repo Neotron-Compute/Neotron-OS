@@ -26,7 +26,7 @@ pub static READ_ITEM: menu::Item<Ctx> = menu::Item {
         ],
     },
     command: "readblk",
-    help: Some("List all the Block Devices"),
+    help: Some("Display one disk block, as hex"),
 };
 
 /// Called when the "lsblk" command is executed.
@@ -96,15 +96,10 @@ fn read_block(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _
         bios::Result::Ok(_) => {
             // Carry on
             let mut count = 0;
-            for chunk in buffer.chunks(16) {
+            for chunk in buffer.chunks(32) {
                 print!("{:03x}: ", count);
                 for b in chunk {
-                    print!("{:02x} ", *b);
-                }
-                print!(" ");
-                for b in chunk {
-                    let c = char::from(*b);
-                    print!("{}", if c.is_ascii_graphic() { c } else { '.' });
+                    print!("{:02x}", *b);
                 }
                 count += chunk.len();
                 println!();

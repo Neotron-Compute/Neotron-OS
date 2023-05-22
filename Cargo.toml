@@ -1,6 +1,6 @@
 [package]
 name = "neotron-os"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>", "The Neotron Developers"]
 edition = "2018"
 description = "The Neotron Operating System"
@@ -25,6 +25,7 @@ bench = false
 
 [lib]
 crate-type = ["rlib", "cdylib"]
+required-features = ["native-log"]
 
 [profile.release]
 lto = true
@@ -40,7 +41,8 @@ panic = "abort"
 neotron-common-bios = "0.8"
 pc-keyboard = "0.7"
 r0 = "1.0"
-postcard = "0.5"
+postcard = "1.0"
 serde = { version = "1.0", default-features = false }
 menu = "0.3"
 chrono = { version = "0.4", default-features = false }
+embedded-sdmmc = { version = "0.5", default-features = false }

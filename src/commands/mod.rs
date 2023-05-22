@@ -6,6 +6,7 @@ pub use super::Ctx;
 
 mod block;
 mod config;
+mod fs;
 mod hardware;
 mod input;
 mod ram;
@@ -19,11 +20,13 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         &config::COMMAND_ITEM,
         &block::LSBLK_ITEM,
         &block::READ_ITEM,
+        &fs::DIR_ITEM,
         &hardware::LSHW_ITEM,
         &ram::HEXDUMP_ITEM,
-        &ram::LOAD_ITEM,
         #[cfg(target_os = "none")]
         &ram::RUN_ITEM,
+        #[cfg(target_os = "none")]
+        &fs::LOAD_ITEM,
         &screen::CLEAR_ITEM,
         &screen::BENCH_ITEM,
         &screen::FILL_ITEM,
