@@ -2,6 +2,14 @@
 
 ## Unreleased changes
 
+## v0.3.3
+
+* Add `dir` command
+* Change `load` command to load from disk
+* Repository includes `Cargo.lock` file
+* Update to `postcard` 1.0
+* Fix `readblk` help text, and print 32 bytes per line
+
 ## v0.3.2
 
 * Add `date` command.
