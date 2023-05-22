@@ -20,24 +20,6 @@ pub static HEXDUMP_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Dump the contents of RAM as hex"),
 };
 
-pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
-    item_type: menu::ItemType::Callback {
-        function: load,
-        parameters: &[
-            menu::Parameter::Mandatory {
-                parameter_name: "address",
-                help: Some("Start address"),
-            },
-            menu::Parameter::Mandatory {
-                parameter_name: "hex",
-                help: Some("Bytes as hex string"),
-            },
-        ],
-    },
-    command: "load",
-    help: Some("Load hex bytes into RAM from stdin"),
-};
-
 #[cfg(target_os = "none")]
 pub static RUN_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -99,52 +81,16 @@ fn hexdump(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _ctx
     println!();
 }
 
-/// Called when the "load" command is executed.
-fn load(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _ctx: &mut Ctx) {
-    let Some(address_str) = args.get(0) else {
-        println!("No address");
-        return;
-    };
-    let Ok(address) = parse_usize(address_str) else {
-        println!("Bad address");
-        return;
-    };
-    let Some(mut hex_str) = args.get(1).cloned() else {
-        println!("No hex");
-        return;
-    };
-
-    let mut address = address as *mut u8;
-    let mut count = 0;
-    loop {
-        let Some(hex_byte) = hex_str.get(0..2) else {
-            println!("Bad hex from {:?}", hex_str);
-            return;
-        };
-        hex_str = &hex_str[2..];
-        let Ok(byte)  = u8::from_str_radix(hex_byte, 16) else {
-            println!("Bad hex {:?}", hex_byte);
-            return;
-        };
-
-        unsafe {
-            address.write_volatile(byte);
-            address = address.offset(1);
-        }
-        count += 1;
-
-        println!("Loaded {} bytes", count);
-    }
-}
-
 #[allow(unused)]
 #[repr(C)]
 pub struct Api {
     pub print: extern "C" fn(data: *const u8, len: usize),
 }
 
+#[allow(unused)]
 static CALLBACK_TABLE: Api = Api { print: print_fn };
 
+#[allow(unused)]
 extern "C" fn print_fn(data: *const u8, len: usize) {
     let slice = unsafe { core::slice::from_raw_parts(data, len) };
     if let Ok(s) = core::str::from_utf8(slice) {
@@ -170,6 +116,7 @@ fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &
         let code: extern "C" fn(*const Api) -> u32 = ::core::mem::transmute(start_ptr);
         code(&CALLBACK_TABLE)
     };
+    println!();
     if result != 0 {
         println!("Got error code {}", result);
     }
