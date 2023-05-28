@@ -13,4 +13,4 @@
 /// of our portion of Flash.
 #[link_section = ".entry_point"]
 #[used]
-pub static ENTRY_POINT_ADDR: extern "C" fn(*const neotron_common_bios::Api) -> ! = neotron_os::main;
+pub static ENTRY_POINT_ADDR: extern "C" fn(&neotron_common_bios::Api) -> ! = neotron_os::main;

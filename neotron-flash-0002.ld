@@ -32,7 +32,11 @@ MEMORY
 
 /* # Entry point = what the BIOS calls to start the OS */
 ENTRY(main);
-EXTERN(__RESET_VECTOR);
+
+/*
+Where the Transient Program Area starts.
+*/
+_tpa_start = ORIGIN(RAM) + LENGTH(RAM);
 
 /* # Sections */
 SECTIONS
