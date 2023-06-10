@@ -49,4 +49,5 @@ serde = { version = "1.0", default-features = false }
 menu = "0.3"
 chrono = { version = "0.4", default-features = false }
 embedded-sdmmc = { version = "0.5", default-features = false }
-neotron-api = { path = "../neotron-api" }
+neotron-api = "0.1"
+
