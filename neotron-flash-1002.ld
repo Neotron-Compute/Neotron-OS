@@ -23,16 +23,24 @@ MEMORY
 {
     /* The first 128 KiB is for the BIOS. We get the rest. */
     FLASH (rx)  : ORIGIN = 0x10020000, LENGTH = 128K
+
     /*
-     * We get the bottom 4KB of RAM. Anything above that is for applications
-     * (up to wherever the BIOS tells us we can use.)
+     * The RAM reserved for the OS. Above this is the Transient Program Area.
+     *
+     * This is defined by the Neotron specification for a given platform. On this
+     * Cortex-M based platform, it's the start of Cortex-M SRAM, plus 4 KiB, or
+     * 0x2000_1000.
      */
     RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 4K
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
 ENTRY(main);
-EXTERN(__RESET_VECTOR);
+
+/*
+Where the Transient Program Area starts.
+*/
+_tpa_start = ORIGIN(RAM) + LENGTH(RAM);
 
 /* # Sections */
 SECTIONS

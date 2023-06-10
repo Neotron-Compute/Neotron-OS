@@ -22,7 +22,7 @@ pub static COMMAND_ITEM: menu::Item<Ctx> = menu::Item {
 
 /// Called when the "config" command is executed.
 fn command(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
-    let command = args.get(0).cloned().unwrap_or("print");
+    let command = args.first().cloned().unwrap_or("print");
     match command {
         "reset" => match config::Config::load() {
             Ok(new_config) => {

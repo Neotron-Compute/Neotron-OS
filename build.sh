@@ -11,9 +11,9 @@ for TARGET_ARCH in thumbv6m-none-eabi thumbv7m-none-eabi thumbv7em-none-eabi; do
   echo "TARGET is ${TARGET_ARCH}"
   for BINARY in flash0002 flash0802 flash1002; do
     echo "BINARY is ${BINARY}"
-    cargo build --verbose --release --target=${TARGET_ARCH} --bin ${BINARY}
+    cargo build $* --release --target=${TARGET_ARCH} --bin ${BINARY}
     # objcopy would do the build for us first, but it doesn't have good build output
-    cargo objcopy --verbose --release --target=${TARGET_ARCH} --bin ${BINARY} -- -O binary ${RELEASE_DIR}/${TARGET_ARCH}-${BINARY}-libneotron_os.bin
+    cargo objcopy $* --release --target=${TARGET_ARCH} --bin ${BINARY} -- -O binary ${RELEASE_DIR}/${TARGET_ARCH}-${BINARY}-libneotron_os.bin
     # Keep the ELF file too (for debugging)
     cp ./target/${TARGET_ARCH}/release/${BINARY} ${RELEASE_DIR}/${TARGET_ARCH}-${BINARY}-libneotron_os.elf
   done

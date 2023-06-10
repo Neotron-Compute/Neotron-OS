@@ -14,6 +14,8 @@ use neotron_common_bios as bios;
 
 mod commands;
 mod config;
+mod fs;
+mod program;
 mod vgaconsole;
 
 // ===========================================================================
@@ -48,12 +50,12 @@ static IS_PANIC: AtomicBool = AtomicBool::new(false);
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        if let Some(ref mut console) = unsafe { &mut crate::VGA_CONSOLE } {
+        if let Some(ref mut console) = unsafe { &mut $crate::VGA_CONSOLE } {
             #[allow(unused)]
             use core::fmt::Write as _;
             write!(console, $($arg)*).unwrap();
         }
-        if let Some(ref mut console) = unsafe { &mut crate::SERIAL_CONSOLE } {
+        if let Some(ref mut console) = unsafe { &mut $crate::SERIAL_CONSOLE } {
             #[allow(unused)]
             use core::fmt::Write as _;
             write!(console, $($arg)*).unwrap();
@@ -64,10 +66,10 @@ macro_rules! print {
 /// Prints to the screen and puts a new-line on the end
 #[macro_export]
 macro_rules! println {
-    () => (crate::print!("\n"));
+    () => ($crate::print!("\n"));
     ($($arg:tt)*) => {
-        crate::print!($($arg)*);
-        crate::print!("\n");
+        $crate::print!($($arg)*);
+        $crate::print!("\n");
     };
 }
 
@@ -129,6 +131,25 @@ impl Api {
 /// Represents the serial port we can use as a text input/output device.
 struct SerialConsole(u8);
 
+impl SerialConsole {
+    fn write_bstr(&mut self, data: &[u8]) -> core::fmt::Result {
+        let api = API.get();
+        let is_panic = IS_PANIC.load(Ordering::SeqCst);
+        let res = (api.serial_write)(
+            // Which port
+            self.0,
+            // Data
+            bios::ApiByteSlice::new(data),
+            // No timeout
+            bios::Option::None,
+        );
+        if !is_panic {
+            res.unwrap();
+        }
+        Ok(())
+    }
+}
+
 impl core::fmt::Write for SerialConsole {
     fn write_str(&mut self, data: &str) -> core::fmt::Result {
         let api = API.get();
@@ -151,6 +172,7 @@ impl core::fmt::Write for SerialConsole {
 pub struct Ctx {
     config: config::Config,
     keyboard: pc_keyboard::EventDecoder<pc_keyboard::layouts::AnyLayout>,
+    tpa: program::TransientProgramArea,
 }
 
 impl core::fmt::Write for Ctx {
@@ -195,7 +217,7 @@ unsafe fn start_up_init() {
 /// This is the function the BIOS calls. This is because we store the address
 /// of this function in the ENTRY_POINT_ADDR variable.
 #[no_mangle]
-pub extern "C" fn main(api: *const bios::Api) -> ! {
+pub extern "C" fn main(api: &bios::Api) -> ! {
     unsafe {
         start_up_init();
         API.store(api);
@@ -242,13 +264,39 @@ pub extern "C" fn main(api: *const bios::Api) -> ! {
     println!("Welcome to {}!", OS_VERSION);
     println!("Copyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022");
 
-    let ctx = Ctx {
+    let (tpa_start, tpa_size) = match (api.memory_get_region)(0) {
+        bios::Option::None => {
+            panic!("No TPA offered by BIOS!");
+        }
+        bios::Option::Some(tpa) => {
+            if tpa.length < 256 {
+                panic!("TPA not large enough");
+            }
+            let offset = tpa.start.align_offset(4);
+            (
+                unsafe { tpa.start.add(offset) as *mut u32 },
+                tpa.length - offset,
+            )
+        }
+    };
+
+    let mut ctx = Ctx {
         config,
         keyboard: pc_keyboard::EventDecoder::new(
             pc_keyboard::layouts::AnyLayout::Uk105Key(pc_keyboard::layouts::Uk105Key),
             pc_keyboard::HandleControl::MapLettersToUnicode,
         ),
+        tpa: unsafe {
+            // We have to trust the values given to us by the BIOS. If it lies, we will crash.
+            program::TransientProgramArea::new(tpa_start, tpa_size)
+        },
     };
+
+    println!(
+        "TPA: {} bytes @ {:p}",
+        ctx.tpa.as_slice_u8().len(),
+        ctx.tpa.as_slice_u8().as_ptr()
+    );
 
     let mut buffer = [0u8; 256];
     let mut menu = menu::Runner::new(&commands::OS_MENU, &mut buffer, ctx);

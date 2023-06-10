@@ -22,7 +22,7 @@ jobs:
           rustup component add llvm-tools-preview
           cargo install cargo-binutils
       - name: Build
-        run: ./build.sh
+        run: ./build.sh --verbose
       - name: Upload files to Release
         if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
