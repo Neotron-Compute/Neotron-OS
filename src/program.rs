@@ -180,7 +180,7 @@ impl TransientProgramArea {
         drop(application_ram);
         let result = unsafe {
             let code: extern "C" fn(*const neotron_api::Api) -> i32 =
-                ::core::mem::transmute(start_addr);
+                ::core::mem::transmute(start_addr as *const ());
             code(&CALLBACK_TABLE)
         };
         Ok(result)

@@ -128,6 +128,8 @@ checksum = "8d5439c4ad607c3c23abf66de8c8bf57ba8adcd1f129e699851a6e43935d339d"
 [[package]]
 name = "neotron-api"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82c00f842e7006421002e67a53866b90ddd6f7d86137b52d2147f5e38b35e82f"
 dependencies = [
  "bitflags",
  "neotron-ffi",
