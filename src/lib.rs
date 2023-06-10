@@ -131,6 +131,25 @@ impl Api {
 /// Represents the serial port we can use as a text input/output device.
 struct SerialConsole(u8);
 
+impl SerialConsole {
+    fn write_bstr(&mut self, data: &[u8]) -> core::fmt::Result {
+        let api = API.get();
+        let is_panic = IS_PANIC.load(Ordering::SeqCst);
+        let res = (api.serial_write)(
+            // Which port
+            self.0,
+            // Data
+            bios::ApiByteSlice::new(data),
+            // No timeout
+            bios::Option::None,
+        );
+        if !is_panic {
+            res.unwrap();
+        }
+        Ok(())
+    }
+}
+
 impl core::fmt::Write for SerialConsole {
     fn write_str(&mut self, data: &str) -> core::fmt::Result {
         let api = API.get();
