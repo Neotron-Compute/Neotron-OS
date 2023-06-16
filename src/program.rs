@@ -1,7 +1,6 @@
 //! Program Loading and Execution
 
 use embedded_sdmmc::File;
-use neotron_loader::traits::Source;
 
 use crate::{
     fs::{BiosBlock, BiosTime},
@@ -85,6 +84,19 @@ impl FileSource {
             offset_cached: core::cell::Cell::new(None),
         }
     }
+
+    fn uncached_read(
+        &self,
+        offset: u32,
+        out_buffer: &mut [u8],
+    ) -> Result<(), embedded_sdmmc::Error<neotron_common_bios::Error>> {
+        println!("Reading from {}", offset);
+        self.file.borrow_mut().seek_from_start(offset).unwrap();
+        self.mgr
+            .borrow_mut()
+            .read(&self.volume, &mut self.file.borrow_mut(), out_buffer)?;
+        Ok(())
+    }
 }
 
 impl neotron_loader::traits::Source for &FileSource {
@@ -99,7 +111,7 @@ impl neotron_loader::traits::Source for &FileSource {
                 {
                     // Do a fast copy from the cache
                     let start = (offset - offset_cached) as usize;
-                    let end = (start as usize) + chunk.len();
+                    let end = start + chunk.len();
                     chunk.copy_from_slice(&self.buffer.borrow()[start..end]);
                     return Ok(());
                 }
@@ -220,7 +232,7 @@ impl TransientProgramArea {
                 for b in ram.iter_mut() {
                     *b = 0;
                 }
-                (&source).read(ph.p_offset(), &mut ram[0..ph.p_filesz() as usize])?;
+                source.uncached_read(ph.p_offset(), &mut ram[0..ph.p_filesz() as usize])?;
             }
         }
 
