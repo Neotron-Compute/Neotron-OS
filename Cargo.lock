@@ -152,6 +152,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d37886e73d87732421aaf5da617eead9d69a7daf6b0d059780f76157d9ce5372"
 
 [[package]]
+name = "neotron-loader"
+version = "0.1.0"
+source = "git+https://github.com/neotron-compute/neotron-loader#14ff18addd5bf9a2f0b6929bfa124439768edc5c"
+
+[[package]]
 name = "neotron-os"
 version = "0.3.3"
 dependencies = [
@@ -160,6 +165,7 @@ dependencies = [
  "menu",
  "neotron-api",
  "neotron-common-bios",
+ "neotron-loader",
  "pc-keyboard",
  "postcard",
  "r0",

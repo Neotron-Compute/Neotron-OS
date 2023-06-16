@@ -50,6 +50,7 @@ menu = "0.3"
 chrono = { version = "0.4", default-features = false }
 embedded-sdmmc = { version = "0.5", default-features = false }
 neotron-api = "0.1"
+neotron-loader = { git = "https://github.com/neotron-compute/neotron-loader" }
 
 [features]
 lib-mode = []
