@@ -224,15 +224,21 @@ impl TransientProgramArea {
 
         let mut iter = loader.iter_program_headers();
         while let Some(Ok(ph)) = iter.next() {
-            if ph.p_vaddr() >= 0x2000_1000 {
+            if ph.p_vaddr() as *mut u32 >= self.memory_bottom
+                && ph.p_type() == neotron_loader::ProgramHeader::PT_LOAD
+            {
                 println!("Loading {} bytes to 0x{:08x}", ph.p_memsz(), ph.p_vaddr());
                 let ram = unsafe {
                     core::slice::from_raw_parts_mut(ph.p_vaddr() as *mut u8, ph.p_memsz() as usize)
                 };
+                // Zero all of it.
                 for b in ram.iter_mut() {
                     *b = 0;
                 }
-                source.uncached_read(ph.p_offset(), &mut ram[0..ph.p_filesz() as usize])?;
+                // Replace some of those zeros with bytes from disk.
+                if ph.p_filesz() != 0 {
+                    source.uncached_read(ph.p_offset(), &mut ram[0..ph.p_filesz() as usize])?;
+                }
             }
         }
 
