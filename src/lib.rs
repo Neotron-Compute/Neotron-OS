@@ -188,7 +188,7 @@ impl core::fmt::Write for Ctx {
 
 /// Initialise our global variables - the BIOS will not have done this for us
 /// (as it doesn't know where they are).
-#[cfg(target_os = "none")]
+#[cfg(all(target_os = "none", not(feature = "lib-mode")))]
 unsafe fn start_up_init() {
     extern "C" {
 
@@ -205,7 +205,7 @@ unsafe fn start_up_init() {
     r0::init_data(&mut __sdata, &mut __edata, &__sidata);
 }
 
-#[cfg(not(target_os = "none"))]
+#[cfg(any(not(target_os = "none"), feature = "lib-mode"))]
 unsafe fn start_up_init() {
     // Nothing to do
 }
@@ -217,7 +217,7 @@ unsafe fn start_up_init() {
 /// This is the function the BIOS calls. This is because we store the address
 /// of this function in the ENTRY_POINT_ADDR variable.
 #[no_mangle]
-pub extern "C" fn main(api: &bios::Api) -> ! {
+pub extern "C" fn os_main(api: &bios::Api) -> ! {
     unsafe {
         start_up_init();
         API.store(api);
@@ -351,6 +351,7 @@ pub extern "C" fn main(api: &bios::Api) -> ! {
 /// Called when we have a panic.
 #[inline(never)]
 #[panic_handler]
+#[cfg(not(feature = "lib-mode"))]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     IS_PANIC.store(true, Ordering::SeqCst);
     println!("PANIC!\n{:#?}", info);
