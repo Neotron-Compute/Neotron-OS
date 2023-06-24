@@ -18,6 +18,8 @@ mod fs;
 mod program;
 mod vgaconsole;
 
+pub use config::Config as OsConfig;
+
 // ===========================================================================
 // Global Variables
 // ===========================================================================
@@ -342,6 +344,25 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
             }
             bios::Result::Err(e) => {
                 println!("Failed to get HID events: {:?}", e);
+            }
+        }
+        if let Some((uart_dev, _serial_conf)) = menu.context.config.get_serial_console() {
+            loop {
+                let mut buffer = [0u8; 8];
+                let wrapper = neotron_common_bios::ApiBuffer::new(&mut buffer);
+                match (api.serial_read)(uart_dev, wrapper, neotron_common_bios::Option::None) {
+                    neotron_common_bios::Result::Ok(n) if n == 0 => {
+                        break;
+                    }
+                    neotron_common_bios::Result::Ok(n) => {
+                        for b in &buffer[0..n] {
+                            menu.input_byte(*b);
+                        }
+                    }
+                    _ => {
+                        break;
+                    }
+                }
             }
         }
         (api.power_idle)();
