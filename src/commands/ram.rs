@@ -20,7 +20,6 @@ pub static HEXDUMP_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Dump the contents of RAM as hex"),
 };
 
-#[cfg(target_os = "none")]
 pub static RUN_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
         function: run,
@@ -30,13 +29,31 @@ pub static RUN_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Jump to start of application area"),
 };
 
+pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: loadf,
+        parameters: &[
+            menu::Parameter::Mandatory {
+                parameter_name: "address",
+                help: Some("The address to load from"),
+            },
+            menu::Parameter::Mandatory {
+                parameter_name: "length",
+                help: Some("The number of bytes to load"),
+            },
+        ],
+    },
+    command: "loadf",
+    help: Some("Copy a program from ROM/RAM into the application area"),
+};
+
 fn parse_usize(input: &str) -> Result<usize, core::num::ParseIntError> {
     if let Some(digits) = input.strip_prefix("0x") {
         // Parse as hex
         usize::from_str_radix(digits, 16)
     } else {
         // Parse as decimal
-        usize::from_str_radix(input, 10)
+        input.parse::<usize>()
     }
 }
 
@@ -47,7 +64,7 @@ fn parse_usize(input: &str) -> Result<usize, core::num::ParseIntError> {
 fn hexdump(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _ctx: &mut Ctx) {
     const BYTES_PER_LINE: usize = 16;
 
-    let Some(address_str) = args.get(0) else {
+    let Some(address_str) = args.first() else {
         println!("No address");
         return;
     };
@@ -81,43 +98,51 @@ fn hexdump(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _ctx
     println!();
 }
 
-#[allow(unused)]
-#[repr(C)]
-pub struct Api {
-    pub print: extern "C" fn(data: *const u8, len: usize),
-}
-
-#[allow(unused)]
-static CALLBACK_TABLE: Api = Api { print: print_fn };
-
-#[allow(unused)]
-extern "C" fn print_fn(data: *const u8, len: usize) {
-    let slice = unsafe { core::slice::from_raw_parts(data, len) };
-    if let Ok(s) = core::str::from_utf8(slice) {
-        print!("{}", s);
-    } else {
-        // Ignore App output - not UTF-8
+/// Called when the "run" command is executed.
+fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
+    match ctx.tpa.execute() {
+        Ok(0) => {
+            println!();
+        }
+        Ok(n) => {
+            println!("\nError Code: {}", n);
+        }
+        Err(e) => {
+            println!("\nFailed to execute: {:?}", e);
+        }
     }
 }
 
-/// Called when the "run" command is executed.
-#[cfg(target_os = "none")]
-fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    use core::convert::TryInto;
-    const APPLICATION_START_ADDR: usize = 0x2000_1000;
-    const APPLICATION_LEN: usize = 4096;
-    // Application space starts 4K into Cortex-M SRAM
-    let application_ram: &'static mut [u8] = unsafe {
-        core::slice::from_raw_parts_mut(APPLICATION_START_ADDR as *mut u8, APPLICATION_LEN)
+/// Called when the "loadf" command is executed.
+///
+/// If you ask for an address that generates a HardFault, the OS will crash. So
+/// don't.
+fn loadf(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
+    let Some(address_str) = args.first() else {
+        println!("No address");
+        return;
     };
-    let start_word: [u8; 4] = (&application_ram[0..4]).try_into().unwrap();
-    let start_ptr = usize::from_le_bytes(start_word) as *const ();
-    let result = unsafe {
-        let code: extern "C" fn(*const Api) -> u32 = ::core::mem::transmute(start_ptr);
-        code(&CALLBACK_TABLE)
+    let Ok(address) = parse_usize(address_str) else {
+        println!("Bad address");
+        return;
     };
-    println!();
-    if result != 0 {
-        println!("Got error code {}", result);
+    let Some(len_str) = args.get(1) else {
+        println!("No length");
+        return;
+    };
+    let Ok(len) = parse_usize(len_str) else {
+        println!("Bad length");
+        return;
+    };
+
+    let src_slice = unsafe { core::slice::from_raw_parts(address as *const u8, len) };
+
+    match ctx.tpa.copy_program(src_slice) {
+        Ok(_) => {
+            println!("Ok");
+        }
+        Err(e) => {
+            println!("Error: {:?}", e);
+        }
     }
 }
