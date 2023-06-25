@@ -177,7 +177,6 @@ impl TransientProgramArea {
             return Err(Error::BadAddress(start_addr));
         }
         println!("OK!");
-        drop(application_ram);
         let result = unsafe {
             let code: extern "C" fn(*const neotron_api::Api) -> i32 =
                 ::core::mem::transmute(start_addr as *const ());

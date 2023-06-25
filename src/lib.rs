@@ -18,6 +18,8 @@ mod fs;
 mod program;
 mod vgaconsole;
 
+pub use config::Config as OsConfig;
+
 // ===========================================================================
 // Global Variables
 // ===========================================================================
@@ -188,7 +190,7 @@ impl core::fmt::Write for Ctx {
 
 /// Initialise our global variables - the BIOS will not have done this for us
 /// (as it doesn't know where they are).
-#[cfg(target_os = "none")]
+#[cfg(all(target_os = "none", not(feature = "lib-mode")))]
 unsafe fn start_up_init() {
     extern "C" {
 
@@ -205,7 +207,7 @@ unsafe fn start_up_init() {
     r0::init_data(&mut __sdata, &mut __edata, &__sidata);
 }
 
-#[cfg(not(target_os = "none"))]
+#[cfg(any(not(target_os = "none"), feature = "lib-mode"))]
 unsafe fn start_up_init() {
     // Nothing to do
 }
@@ -217,7 +219,7 @@ unsafe fn start_up_init() {
 /// This is the function the BIOS calls. This is because we store the address
 /// of this function in the ENTRY_POINT_ADDR variable.
 #[no_mangle]
-pub extern "C" fn main(api: &bios::Api) -> ! {
+pub extern "C" fn os_main(api: &bios::Api) -> ! {
     unsafe {
         start_up_init();
         API.store(api);
@@ -344,6 +346,25 @@ pub extern "C" fn main(api: &bios::Api) -> ! {
                 println!("Failed to get HID events: {:?}", e);
             }
         }
+        if let Some((uart_dev, _serial_conf)) = menu.context.config.get_serial_console() {
+            loop {
+                let mut buffer = [0u8; 8];
+                let wrapper = neotron_common_bios::ApiBuffer::new(&mut buffer);
+                match (api.serial_read)(uart_dev, wrapper, neotron_common_bios::Option::None) {
+                    neotron_common_bios::Result::Ok(n) if n == 0 => {
+                        break;
+                    }
+                    neotron_common_bios::Result::Ok(n) => {
+                        for b in &buffer[0..n] {
+                            menu.input_byte(*b);
+                        }
+                    }
+                    _ => {
+                        break;
+                    }
+                }
+            }
+        }
         (api.power_idle)();
     }
 }
@@ -351,6 +372,7 @@ pub extern "C" fn main(api: &bios::Api) -> ! {
 /// Called when we have a panic.
 #[inline(never)]
 #[panic_handler]
+#[cfg(not(feature = "lib-mode"))]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     IS_PANIC.store(true, Ordering::SeqCst);
     println!("PANIC!\n{:#?}", info);
