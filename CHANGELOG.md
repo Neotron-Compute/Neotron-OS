@@ -2,6 +2,11 @@
 
 ## Unreleased changes
 
+## v0.4.0
+
+* The `load` command now takes ELF binaries, not raw binaries.
+* Neotron OS can now be used as a dependency within an application, if desired.
+
 ## v0.3.3
 
 * Add `dir` command
