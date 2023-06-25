@@ -1,6 +1,11 @@
 //! Program Loading and Execution
 
-use crate::{print, println};
+use embedded_sdmmc::File;
+
+use crate::{
+    fs::{BiosBlock, BiosTime},
+    print, println,
+};
 
 #[allow(unused)]
 static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
@@ -34,13 +39,98 @@ pub enum Error {
     ProgramTooLarge,
     /// A filesystem error occurred
     Filesystem(embedded_sdmmc::Error<neotron_common_bios::Error>),
-    /// Start Address didn't look right
-    BadAddress(u32),
+    /// An ELF error occurred
+    Elf(neotron_loader::Error<embedded_sdmmc::Error<neotron_common_bios::Error>>),
+    /// Tried to run when nothing was loaded
+    NothingLoaded,
 }
 
 impl From<embedded_sdmmc::Error<neotron_common_bios::Error>> for Error {
     fn from(value: embedded_sdmmc::Error<neotron_common_bios::Error>) -> Self {
         Error::Filesystem(value)
+    }
+}
+
+impl From<neotron_loader::Error<embedded_sdmmc::Error<neotron_common_bios::Error>>> for Error {
+    fn from(
+        value: neotron_loader::Error<embedded_sdmmc::Error<neotron_common_bios::Error>>,
+    ) -> Self {
+        Error::Elf(value)
+    }
+}
+
+/// Something the ELF loader can use to get bytes off the disk
+struct FileSource {
+    mgr: core::cell::RefCell<embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>>,
+    volume: embedded_sdmmc::Volume,
+    file: core::cell::RefCell<File>,
+    buffer: core::cell::RefCell<[u8; Self::BUFFER_LEN]>,
+    offset_cached: core::cell::Cell<Option<u32>>,
+}
+
+impl FileSource {
+    const BUFFER_LEN: usize = 128;
+
+    fn new(
+        mgr: embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>,
+        volume: embedded_sdmmc::Volume,
+        file: File,
+    ) -> FileSource {
+        FileSource {
+            mgr: core::cell::RefCell::new(mgr),
+            file: core::cell::RefCell::new(file),
+            volume,
+            buffer: core::cell::RefCell::new([0u8; 128]),
+            offset_cached: core::cell::Cell::new(None),
+        }
+    }
+
+    fn uncached_read(
+        &self,
+        offset: u32,
+        out_buffer: &mut [u8],
+    ) -> Result<(), embedded_sdmmc::Error<neotron_common_bios::Error>> {
+        println!("Reading from {}", offset);
+        self.file.borrow_mut().seek_from_start(offset).unwrap();
+        self.mgr
+            .borrow_mut()
+            .read(&self.volume, &mut self.file.borrow_mut(), out_buffer)?;
+        Ok(())
+    }
+}
+
+impl neotron_loader::traits::Source for &FileSource {
+    type Error = embedded_sdmmc::Error<neotron_common_bios::Error>;
+
+    fn read(&self, mut offset: u32, out_buffer: &mut [u8]) -> Result<(), Self::Error> {
+        for chunk in out_buffer.chunks_mut(FileSource::BUFFER_LEN) {
+            if let Some(offset_cached) = self.offset_cached.get() {
+                let cached_range = offset_cached..offset_cached + FileSource::BUFFER_LEN as u32;
+                if cached_range.contains(&offset)
+                    && cached_range.contains(&(offset + chunk.len() as u32 - 1))
+                {
+                    // Do a fast copy from the cache
+                    let start = (offset - offset_cached) as usize;
+                    let end = start + chunk.len();
+                    chunk.copy_from_slice(&self.buffer.borrow()[start..end]);
+                    return Ok(());
+                }
+            }
+
+            println!("Reading from {}", offset);
+            self.file.borrow_mut().seek_from_start(offset).unwrap();
+            self.mgr.borrow_mut().read(
+                &self.volume,
+                &mut self.file.borrow_mut(),
+                self.buffer.borrow_mut().as_mut_slice(),
+            )?;
+            self.offset_cached.set(Some(offset));
+            chunk.copy_from_slice(&self.buffer.borrow()[0..chunk.len()]);
+
+            offset += chunk.len() as u32;
+        }
+
+        Ok(())
     }
 }
 
@@ -52,6 +142,7 @@ impl From<embedded_sdmmc::Error<neotron_common_bios::Error>> for Error {
 pub struct TransientProgramArea {
     memory_bottom: *mut u32,
     memory_top: *mut u32,
+    last_entry: u32,
 }
 
 extern "C" {
@@ -65,6 +156,7 @@ impl TransientProgramArea {
         let mut tpa = TransientProgramArea {
             memory_bottom: start,
             memory_top: start.add(length_in_bytes / core::mem::size_of::<u32>()),
+            last_entry: 0,
         };
 
         // You have to take the address of a linker symbol to find out where
@@ -120,19 +212,38 @@ impl TransientProgramArea {
         // Open the first partition
         let mut volume = mgr.get_volume(embedded_sdmmc::VolumeIdx(0))?;
         let root_dir = mgr.open_root_dir(&volume)?;
-        let mut file = mgr.open_file_in_dir(
+        let file = mgr.open_file_in_dir(
             &mut volume,
             &root_dir,
             file_name,
             embedded_sdmmc::Mode::ReadOnly,
         )?;
-        // Application space starts 4K into Cortex-M SRAM
-        let application_ram = self.as_slice_u8();
-        if file.length() as usize > application_ram.len() {
-            return Err(Error::ProgramTooLarge);
-        };
-        let application_ram = &mut application_ram[0..file.length() as usize];
-        mgr.read(&volume, &mut file, application_ram)?;
+
+        let source = FileSource::new(mgr, volume, file);
+        let loader = neotron_loader::Loader::new(&source)?;
+
+        let mut iter = loader.iter_program_headers();
+        while let Some(Ok(ph)) = iter.next() {
+            if ph.p_vaddr() as *mut u32 >= self.memory_bottom
+                && ph.p_type() == neotron_loader::ProgramHeader::PT_LOAD
+            {
+                println!("Loading {} bytes to 0x{:08x}", ph.p_memsz(), ph.p_vaddr());
+                let ram = unsafe {
+                    core::slice::from_raw_parts_mut(ph.p_vaddr() as *mut u8, ph.p_memsz() as usize)
+                };
+                // Zero all of it.
+                for b in ram.iter_mut() {
+                    *b = 0;
+                }
+                // Replace some of those zeros with bytes from disk.
+                if ph.p_filesz() != 0 {
+                    source.uncached_read(ph.p_offset(), &mut ram[0..ph.p_filesz() as usize])?;
+                }
+            }
+        }
+
+        self.last_entry = loader.e_entry();
+
         Ok(())
     }
 
@@ -156,32 +267,17 @@ impl TransientProgramArea {
     /// of view of this API. You wanted to run a program, and the program was
     /// run.
     pub fn execute(&mut self) -> Result<i32, Error> {
-        // Read start-ptr as a 32-bit value
-        let application_ram = self.as_slice_u32();
-        let start_addr = application_ram[0];
-        // But now we want RAM as u8 values, as start_ptr will be an odd number
-        // because it's a Thumb2 address and that's a u16 aligned value, plus 1
-        // to indicate Thumb2 mode.
-        let application_ram = self.as_slice_u8();
-        print!("Start address 0x{:08x}:", start_addr);
-        // Does this start pointer look OK?
-        if (start_addr & 1) != 1 {
-            println!("not thumb2 func");
-            return Err(Error::BadAddress(start_addr));
+        if self.last_entry == 0 {
+            return Err(Error::NothingLoaded);
         }
-        if !application_ram
-            .as_ptr_range()
-            .contains(&(start_addr as *const u8))
-        {
-            println!("out of bounds");
-            return Err(Error::BadAddress(start_addr));
-        }
-        println!("OK!");
+
         let result = unsafe {
             let code: extern "C" fn(*const neotron_api::Api) -> i32 =
-                ::core::mem::transmute(start_addr as *const ());
+                ::core::mem::transmute(self.last_entry as *const ());
             code(&CALLBACK_TABLE)
         };
+
+        self.last_entry = 0;
         Ok(result)
     }
 }
