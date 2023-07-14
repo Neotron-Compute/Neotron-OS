@@ -18,7 +18,7 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 
     println!("Memory regions:");
     for region_idx in 0..=255u8 {
-        if let bios::Option::Some(region) = (api.memory_get_region)(region_idx) {
+        if let bios::FfiOption::Some(region) = (api.memory_get_region)(region_idx) {
             println!("  {}: {}", region_idx, region);
             found = true;
         }
@@ -31,7 +31,7 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 
     println!("Serial Devices:");
     for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.serial_get_info)(dev_idx) {
+        if let bios::FfiOption::Some(device_info) = (api.serial_get_info)(dev_idx) {
             println!(
                 "  {}: {} {:?}",
                 dev_idx, device_info.name, device_info.device_type
@@ -47,7 +47,7 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 
     println!("Block Devices:");
     for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.block_dev_get_info)(dev_idx) {
+        if let bios::FfiOption::Some(device_info) = (api.block_dev_get_info)(dev_idx) {
             println!(
                 "  {}: {} {:?} bs={} size={} MiB",
                 dev_idx,
@@ -67,7 +67,7 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 
     println!("I2C Buses:");
     for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.i2c_bus_get_info)(dev_idx) {
+        if let bios::FfiOption::Some(device_info) = (api.i2c_bus_get_info)(dev_idx) {
             println!("  {}: {:?}", dev_idx, device_info);
             found = true;
         }
@@ -80,7 +80,7 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 
     println!("Neotron Bus Devices:");
     for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.bus_get_info)(dev_idx) {
+        if let bios::FfiOption::Some(device_info) = (api.bus_get_info)(dev_idx) {
             println!("  {}: {:?}", dev_idx, device_info);
             found = true;
         }
@@ -93,7 +93,7 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 
     println!("Audio Mixers:");
     for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.audio_mixer_channel_get_info)(dev_idx) {
+        if let bios::FfiOption::Some(device_info) = (api.audio_mixer_channel_get_info)(dev_idx) {
             println!("  {}: {:?}", dev_idx, device_info);
             found = true;
         }

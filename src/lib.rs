@@ -141,9 +141,9 @@ impl SerialConsole {
             // Which port
             self.0,
             // Data
-            bios::ApiByteSlice::new(data),
+            bios::FfiByteSlice::new(data),
             // No timeout
-            bios::Option::None,
+            bios::FfiOption::None,
         );
         if !is_panic {
             res.unwrap();
@@ -160,9 +160,9 @@ impl core::fmt::Write for SerialConsole {
             // Which port
             self.0,
             // Data
-            bios::ApiByteSlice::new(data.as_bytes()),
+            bios::FfiByteSlice::new(data.as_bytes()),
             // No timeout
-            bios::Option::None,
+            bios::FfiOption::None,
         );
         if !is_panic {
             res.unwrap();
@@ -267,10 +267,10 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
     println!("Copyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022");
 
     let (tpa_start, tpa_size) = match (api.memory_get_region)(0) {
-        bios::Option::None => {
+        bios::FfiOption::None => {
             panic!("No TPA offered by BIOS!");
         }
-        bios::Option::Some(tpa) => {
+        bios::FfiOption::Some(tpa) => {
             if tpa.length < 256 {
                 panic!("TPA not large enough");
             }
@@ -305,7 +305,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 
     loop {
         match (api.hid_get_event)() {
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyPress(code))) => {
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyPress(code))) => {
                 let pckb_ev = pc_keyboard::KeyEvent {
                     code,
                     state: pc_keyboard::KeyState::Down,
@@ -323,7 +323,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
                     }
                 }
             }
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyRelease(code))) => {
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyRelease(code))) => {
                 let pckb_ev = pc_keyboard::KeyEvent {
                     code,
                     state: pc_keyboard::KeyState::Up,
@@ -338,23 +338,25 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
                     }
                 }
             }
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::MouseInput(_ignore))) => {}
-            bios::Result::Ok(bios::Option::None) => {
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::MouseInput(
+                _ignore,
+            ))) => {}
+            bios::ApiResult::Ok(bios::FfiOption::None) => {
                 // Do nothing
             }
-            bios::Result::Err(e) => {
+            bios::ApiResult::Err(e) => {
                 println!("Failed to get HID events: {:?}", e);
             }
         }
         if let Some((uart_dev, _serial_conf)) = menu.context.config.get_serial_console() {
             loop {
                 let mut buffer = [0u8; 8];
-                let wrapper = neotron_common_bios::ApiBuffer::new(&mut buffer);
-                match (api.serial_read)(uart_dev, wrapper, neotron_common_bios::Option::None) {
-                    neotron_common_bios::Result::Ok(n) if n == 0 => {
+                let wrapper = neotron_common_bios::FfiBuffer::new(&mut buffer);
+                match (api.serial_read)(uart_dev, wrapper, neotron_common_bios::FfiOption::None) {
+                    neotron_common_bios::ApiResult::Ok(n) if n == 0 => {
                         break;
                     }
-                    neotron_common_bios::Result::Ok(n) => {
+                    neotron_common_bios::ApiResult::Ok(n) => {
                         for b in &buffer[0..n] {
                             menu.input_byte(*b);
                         }

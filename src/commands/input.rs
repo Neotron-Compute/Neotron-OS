@@ -16,7 +16,7 @@ fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx:
     let api = API.get();
     loop {
         match (api.hid_get_event)() {
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyPress(code))) => {
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyPress(code))) => {
                 let pckb_ev = pc_keyboard::KeyEvent {
                     code,
                     state: pc_keyboard::KeyState::Down,
@@ -30,7 +30,7 @@ fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx:
                     break;
                 }
             }
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::KeyRelease(code))) => {
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyRelease(code))) => {
                 let pckb_ev = pc_keyboard::KeyEvent {
                     code,
                     state: pc_keyboard::KeyState::Up,
@@ -41,11 +41,13 @@ fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx:
                     println!("Code={code:?} State=Up Decoded=None");
                 }
             }
-            bios::Result::Ok(bios::Option::Some(bios::hid::HidEvent::MouseInput(_ignore))) => {}
-            bios::Result::Ok(bios::Option::None) => {
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::MouseInput(
+                _ignore,
+            ))) => {}
+            bios::ApiResult::Ok(bios::FfiOption::None) => {
                 // Do nothing
             }
-            bios::Result::Err(e) => {
+            bios::ApiResult::Err(e) => {
                 println!("Failed to get HID events: {:?}", e);
             }
         }

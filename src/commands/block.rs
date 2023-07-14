@@ -36,7 +36,7 @@ fn lsblk(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx:
 
     println!("Block Devices:");
     for dev_idx in 0..=255u8 {
-        if let bios::Option::Some(device_info) = (api.block_dev_get_info)(dev_idx) {
+        if let bios::FfiOption::Some(device_info) = (api.block_dev_get_info)(dev_idx) {
             let (bsize, bunits, dsize, dunits) =
                 match device_info.num_blocks * u64::from(device_info.block_size) {
                     x if x < (1024 * 1024 * 1024) => {
@@ -91,9 +91,9 @@ fn read_block(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _
         dev_idx,
         bios::block_dev::BlockIdx(block_idx),
         1,
-        bios::ApiBuffer::new(&mut buffer),
+        bios::FfiBuffer::new(&mut buffer),
     ) {
-        bios::Result::Ok(_) => {
+        bios::ApiResult::Ok(_) => {
             // Carry on
             let mut count = 0;
             for chunk in buffer.chunks(32) {
@@ -105,7 +105,7 @@ fn read_block(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _
                 println!();
             }
         }
-        bios::Result::Err(e) => {
+        bios::ApiResult::Err(e) => {
             println!("Failed to read: {:?}", e);
         }
     }

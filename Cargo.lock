@@ -138,10 +138,10 @@ dependencies = [
 [[package]]
 name = "neotron-common-bios"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa4b43ef66a881b66110e2bafd11a8cd06613d0e99c52c9e8cdbc1195c61b94b"
+source = "git+https://github.com/neotron-compute/neotron-common-bios?branch=develop#e46b0efdf109faf85be5732e3e1eb4f688f7e26f"
 dependencies = [
  "chrono",
+ "neotron-ffi",
  "pc-keyboard",
 ]
 

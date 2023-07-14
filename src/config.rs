@@ -17,11 +17,11 @@ impl Config {
     pub fn load() -> Result<Config, &'static str> {
         let api = API.get();
         let mut buffer = [0u8; 64];
-        match (api.configuration_get)(bios::ApiBuffer::new(&mut buffer)) {
-            bios::Result::Ok(n) => {
+        match (api.configuration_get)(bios::FfiBuffer::new(&mut buffer)) {
+            bios::ApiResult::Ok(n) => {
                 postcard::from_bytes(&buffer[0..n]).map_err(|_e| "Failed to parse config")
             }
-            bios::Result::Err(_e) => Err("Failed to load config"),
+            bios::ApiResult::Err(_e) => Err("Failed to load config"),
         }
     }
 
@@ -29,10 +29,12 @@ impl Config {
         let api = API.get();
         let mut buffer = [0u8; 64];
         let slice = postcard::to_slice(self, &mut buffer).map_err(|_e| "Failed to parse config")?;
-        match (api.configuration_set)(bios::ApiByteSlice::new(slice)) {
-            bios::Result::Ok(_) => Ok(()),
-            bios::Result::Err(bios::Error::Unimplemented) => Err("BIOS doesn't support this (yet)"),
-            bios::Result::Err(_) => Err("BIOS reported an error"),
+        match (api.configuration_set)(bios::FfiByteSlice::new(slice)) {
+            bios::ApiResult::Ok(_) => Ok(()),
+            bios::ApiResult::Err(bios::Error::Unimplemented) => {
+                Err("BIOS doesn't support this (yet)")
+            }
+            bios::ApiResult::Err(_) => Err("BIOS reported an error"),
         }
     }
 
