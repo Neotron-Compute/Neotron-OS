@@ -111,14 +111,9 @@ impl ConsoleInner {
         self.cursor_depth += 1;
     }
 
-    fn move_char_right(&mut self) {
-        self.col += 1;
-    }
-
-    fn move_char_down(&mut self) {
-        self.row += 1;
-    }
-
+    /// Move the cursor relative to the current location.
+    ///
+    /// Clamps to the visible screen.
     fn move_cursor_relative(&mut self, rows: isize, cols: isize) {
         self.row += rows;
         self.col += cols;
@@ -136,6 +131,9 @@ impl ConsoleInner {
         }
     }
 
+    /// Move the cursor to the given location.
+    ///
+    /// Clamps to the visible screen.
     fn move_cursor_absolute(&mut self, rows: isize, cols: isize) {
         // move it
         self.row = rows;
@@ -144,10 +142,15 @@ impl ConsoleInner {
         self.move_cursor_relative(0, 0);
     }
 
+    /// Move the cursor to 0,0
     fn home(&mut self) {
         self.move_cursor_absolute(0, 0);
     }
 
+    /// If we are currently position off-screen, scroll and fix that.
+    ///
+    /// We defer this so you can write the last char on the last line without
+    /// causing it to scroll pre-emptively.
     fn scroll_as_required(&mut self) {
         assert!(self.row <= self.height);
         if self.col >= self.width {
@@ -160,6 +163,7 @@ impl ConsoleInner {
         }
     }
 
+    /// Blank the screen
     fn clear(&mut self) {
         for row in 0..self.height {
             for col in 0..self.width {
@@ -233,7 +237,6 @@ impl ConsoleInner {
     /// The bottom line will be all space characters.
     fn scroll_page(&mut self) {
         let row_len_bytes = self.width * 2;
-        self.cursor_disable();
         unsafe {
             // Scroll rows[1..=height-1] to become rows[0..=height-2].
             core::ptr::copy(
@@ -242,7 +245,6 @@ impl ConsoleInner {
                 (row_len_bytes * (self.height - 1)) as usize,
             );
         }
-        self.cursor_enable();
         // Blank the bottom line of the screen (rows[height-1]).
         for col in 0..self.width {
             self.write_at(self.height - 1, col, b' ', false);
@@ -413,7 +415,7 @@ impl vte::Perform for ConsoleInner {
     fn print(&mut self, ch: char) {
         self.scroll_as_required();
         self.write(Self::map_char_to_glyph(ch));
-        self.move_char_right();
+        self.col += 1;
     }
 
     /// Execute a C0 or C1 control function.
@@ -433,12 +435,14 @@ impl vte::Perform for ConsoleInner {
             }
             b'\n' => {
                 self.col = 0;
-                self.move_char_down();
+                self.row += 1;
             }
             _ => {
                 // ignore unknown C0 or C1 control code
             }
         }
+        // We may now be off-screen, but that's OK because we will scroll before
+        // we print the next thing.
     }
 
     /// A final character has arrived for a CSI sequence
@@ -454,19 +458,8 @@ impl vte::Perform for ConsoleInner {
         action: char,
     ) {
         // Just in case you want a single parameter, here it is
-        let mut first = params
-            .iter()
-            .next()
-            .and_then(|s| s.first())
-            .unwrap_or(&1)
-            .clone() as isize;
-        let mut second = params
-            .iter()
-            .skip(1)
-            .next()
-            .and_then(|s| s.first())
-            .unwrap_or(&1)
-            .clone() as isize;
+        let mut first = *params.iter().next().and_then(|s| s.first()).unwrap_or(&1) as isize;
+        let mut second = *params.iter().nth(1).and_then(|s| s.first()).unwrap_or(&1) as isize;
 
         match action {
             'm' => {
