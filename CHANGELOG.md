@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+* Switch to neotron-common-bios 0.9
+
 ## v0.4.0
 
 * The `load` command now takes ELF binaries, not raw binaries.

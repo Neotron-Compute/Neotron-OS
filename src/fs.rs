@@ -27,10 +27,10 @@ impl embedded_sdmmc::BlockDevice for BiosBlock {
             0,
             bios::block_dev::BlockIdx(u64::from(start_block_idx.0)),
             blocks.len() as u8,
-            bios::ApiBuffer::new(byte_slice),
+            bios::FfiBuffer::new(byte_slice),
         ) {
-            bios::Result::Ok(_) => Ok(()),
-            bios::Result::Err(e) => Err(e),
+            bios::ApiResult::Ok(_) => Ok(()),
+            bios::ApiResult::Err(e) => Err(e),
         }
     }
 
@@ -50,18 +50,18 @@ impl embedded_sdmmc::BlockDevice for BiosBlock {
             0,
             bios::block_dev::BlockIdx(u64::from(start_block_idx.0)),
             blocks.len() as u8,
-            bios::ApiByteSlice::new(byte_slice),
+            bios::FfiByteSlice::new(byte_slice),
         ) {
-            bios::Result::Ok(_) => Ok(()),
-            bios::Result::Err(e) => Err(e),
+            bios::ApiResult::Ok(_) => Ok(()),
+            bios::ApiResult::Err(e) => Err(e),
         }
     }
 
     fn num_blocks(&self) -> Result<embedded_sdmmc::BlockCount, Self::Error> {
         let api = API.get();
         match (api.block_dev_get_info)(0) {
-            bios::Option::Some(info) => Ok(embedded_sdmmc::BlockCount(info.num_blocks as u32)),
-            bios::Option::None => Err(bios::Error::InvalidDevice),
+            bios::FfiOption::Some(info) => Ok(embedded_sdmmc::BlockCount(info.num_blocks as u32)),
+            bios::FfiOption::None => Err(bios::Error::InvalidDevice),
         }
     }
 }
