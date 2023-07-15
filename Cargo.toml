@@ -41,7 +41,7 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-neotron-common-bios = "0.9"
+neotron-common-bios = "0.10"
 pc-keyboard = "0.7"
 r0 = "1.0"
 postcard = "1.0"
@@ -51,6 +51,7 @@ chrono = { version = "0.4", default-features = false }
 embedded-sdmmc = { version = "0.5", default-features = false }
 neotron-api = "0.1"
 neotron-loader = "0.1"
+vte = { git = "https://github.com/neotron-compute/vte", branch="limit-osc-raw-size" }
 
 [features]
 lib-mode = []

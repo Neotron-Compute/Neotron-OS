@@ -25,7 +25,7 @@ pub use config::Config as OsConfig;
 // ===========================================================================
 
 /// The OS version string
-const OS_VERSION: &str = concat!("Neotron OS, version ", env!("OS_VERSION"));
+const OS_VERSION: &str = concat!("Neotron OS, v", env!("OS_VERSION"));
 
 /// Used to convert between POSIX epoch (for `chrono`) and Neotron epoch (for BIOS APIs).
 const SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH: i64 = 946684800;
@@ -136,7 +136,7 @@ struct SerialConsole(u8);
 impl SerialConsole {
     fn write_bstr(&mut self, data: &[u8]) -> core::fmt::Result {
         let api = API.get();
-        let is_panic = IS_PANIC.load(Ordering::SeqCst);
+        let is_panic = IS_PANIC.load(Ordering::Relaxed);
         let res = (api.serial_write)(
             // Which port
             self.0,
@@ -155,7 +155,7 @@ impl SerialConsole {
 impl core::fmt::Write for SerialConsole {
     fn write_str(&mut self, data: &str) -> core::fmt::Result {
         let api = API.get();
-        let is_panic = IS_PANIC.load(Ordering::SeqCst);
+        let is_panic = IS_PANIC.load(Ordering::Relaxed);
         let res = (api.serial_write)(
             // Which port
             self.0,
@@ -252,7 +252,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
             unsafe {
                 VGA_CONSOLE = Some(vga);
             }
-            println!("Configured VGA console {}x{}", width, height);
+            println!("\u{001b}[0mConfigured VGA console {}x{}", width, height);
         }
     }
 
@@ -263,8 +263,8 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
     }
 
     // Now we can call println!
-    println!("Welcome to {}!", OS_VERSION);
-    println!("Copyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022");
+    println!("\u{001b}[44;33;1m{}\u{001b}[0m", OS_VERSION);
+    println!("\u{001b}[41;37;1mCopyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022\u{001b}[0m");
 
     let (tpa_start, tpa_size) = match (api.memory_get_region)(0) {
         bios::FfiOption::None => {
@@ -295,10 +295,13 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
     };
 
     println!(
-        "TPA: {} bytes @ {:p}",
+        "\u{001b}[7mTPA: {} bytes @ {:p}\u{001b}[0m",
         ctx.tpa.as_slice_u8().len(),
         ctx.tpa.as_slice_u8().as_ptr()
     );
+
+    // Show the cursor
+    print!("\u{001b}[?25h");
 
     let mut buffer = [0u8; 256];
     let mut menu = menu::Runner::new(&commands::OS_MENU, &mut buffer, ctx);
@@ -376,7 +379,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 #[panic_handler]
 #[cfg(not(feature = "lib-mode"))]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    IS_PANIC.store(true, Ordering::SeqCst);
+    IS_PANIC.store(true, Ordering::Relaxed);
     println!("PANIC!\n{:#?}", info);
     let api = API.get();
     loop {
