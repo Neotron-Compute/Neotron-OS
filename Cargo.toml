@@ -34,7 +34,7 @@ required-features = ["native-log"]
 lto = true
 debug = true
 codegen-units = 1
-opt-level = "s"
+opt-level = "z"
 panic = "abort"
 
 [profile.dev]
