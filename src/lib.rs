@@ -6,9 +6,12 @@
 //!
 //! Licence: GPL v3 or higher (see ../LICENCE.md)
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
-// Imports
+// ===========================================================================
+// Modules and Imports
+// ===========================================================================
+
 use core::sync::atomic::{AtomicBool, Ordering};
 use neotron_common_bios as bios;
 
@@ -50,7 +53,7 @@ static IS_PANIC: AtomicBool = AtomicBool::new(false);
 
 /// Prints to the screen
 #[macro_export]
-macro_rules! print {
+macro_rules! osprint {
     ($($arg:tt)*) => {
         if let Some(ref mut console) = unsafe { &mut $crate::VGA_CONSOLE } {
             #[allow(unused)]
@@ -67,11 +70,11 @@ macro_rules! print {
 
 /// Prints to the screen and puts a new-line on the end
 #[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
+macro_rules! osprintln {
+    () => ($crate::osprint!("\n"));
     ($($arg:tt)*) => {
-        $crate::print!($($arg)*);
-        $crate::print!("\n");
+        $crate::osprint!($($arg)*);
+        $crate::osprint!("\n");
     };
 }
 
@@ -179,7 +182,7 @@ pub struct Ctx {
 
 impl core::fmt::Write for Ctx {
     fn write_str(&mut self, data: &str) -> core::fmt::Result {
-        print!("{}", data);
+        osprint!("{}", data);
         Ok(())
     }
 }
@@ -252,19 +255,19 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
             unsafe {
                 VGA_CONSOLE = Some(vga);
             }
-            println!("\u{001b}[0mConfigured VGA console {}x{}", width, height);
+            osprintln!("\u{001b}[0mConfigured VGA console {}x{}", width, height);
         }
     }
 
     if let Some((idx, serial_config)) = config.get_serial_console() {
         let _ignored = (api.serial_configure)(idx, serial_config);
         unsafe { SERIAL_CONSOLE = Some(SerialConsole(idx)) };
-        println!("Configured Serial console on Serial {}", idx);
+        osprintln!("Configured Serial console on Serial {}", idx);
     }
 
-    // Now we can call println!
-    println!("\u{001b}[44;33;1m{}\u{001b}[0m", OS_VERSION);
-    println!("\u{001b}[41;37;1mCopyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022\u{001b}[0m");
+    // Now we can call osprintln!
+    osprintln!("\u{001b}[44;33;1m{}\u{001b}[0m", OS_VERSION);
+    osprintln!("\u{001b}[41;37;1mCopyright © Jonathan 'theJPster' Pallant and the Neotron Developers, 2022\u{001b}[0m");
 
     let (tpa_start, tpa_size) = match (api.memory_get_region)(0) {
         bios::FfiOption::None => {
@@ -294,14 +297,14 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
         },
     };
 
-    println!(
+    osprintln!(
         "\u{001b}[7mTPA: {} bytes @ {:p}\u{001b}[0m",
         ctx.tpa.as_slice_u8().len(),
         ctx.tpa.as_slice_u8().as_ptr()
     );
 
     // Show the cursor
-    print!("\u{001b}[?25h");
+    osprint!("\u{001b}[?25h");
 
     let mut buffer = [0u8; 256];
     let mut menu = menu::Runner::new(&commands::OS_MENU, &mut buffer, ctx);
@@ -348,7 +351,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
                 // Do nothing
             }
             bios::ApiResult::Err(e) => {
-                println!("Failed to get HID events: {:?}", e);
+                osprintln!("Failed to get HID events: {:?}", e);
             }
         }
         if let Some((uart_dev, _serial_conf)) = menu.context.config.get_serial_console() {
@@ -377,10 +380,10 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 /// Called when we have a panic.
 #[inline(never)]
 #[panic_handler]
-#[cfg(not(feature = "lib-mode"))]
+#[cfg(not(any(feature = "lib-mode", test)))]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     IS_PANIC.store(true, Ordering::Relaxed);
-    println!("PANIC!\n{:#?}", info);
+    osprintln!("PANIC!\n{:#?}", info);
     let api = API.get();
     loop {
         (api.power_idle)();

@@ -1,6 +1,6 @@
 //! Input related commands for Neotron OS
 
-use crate::{bios, println, Ctx, API};
+use crate::{bios, osprintln, Ctx, API};
 
 pub static KBTEST_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -22,9 +22,9 @@ fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx:
                     state: pc_keyboard::KeyState::Down,
                 };
                 if let Some(ev) = ctx.keyboard.process_keyevent(pckb_ev) {
-                    println!("Code={code:?} State=Down Decoded={ev:?}");
+                    osprintln!("Code={code:?} State=Down Decoded={ev:?}");
                 } else {
-                    println!("Code={code:?} State=Down Decoded=None");
+                    osprintln!("Code={code:?} State=Down Decoded=None");
                 }
                 if code == pc_keyboard::KeyCode::Escape {
                     break;
@@ -36,9 +36,9 @@ fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx:
                     state: pc_keyboard::KeyState::Up,
                 };
                 if let Some(ev) = ctx.keyboard.process_keyevent(pckb_ev) {
-                    println!("Code={code:?} State=Up Decoded={ev:?}");
+                    osprintln!("Code={code:?} State=Up Decoded={ev:?}");
                 } else {
-                    println!("Code={code:?} State=Up Decoded=None");
+                    osprintln!("Code={code:?} State=Up Decoded=None");
                 }
             }
             bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::MouseInput(
@@ -48,7 +48,7 @@ fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx:
                 // Do nothing
             }
             bios::ApiResult::Err(e) => {
-                println!("Failed to get HID events: {:?}", e);
+                osprintln!("Failed to get HID events: {:?}", e);
             }
         }
     }

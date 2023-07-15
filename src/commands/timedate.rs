@@ -2,7 +2,7 @@
 
 use chrono::{Datelike, Timelike};
 
-use crate::{println, Ctx, API};
+use crate::{osprintln, Ctx, API};
 
 pub static DATE_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -19,10 +19,10 @@ pub static DATE_ITEM: menu::Item<Ctx> = menu::Item {
 /// Called when the "date" command is executed.
 fn date(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &mut Ctx) {
     if let Ok(Some(timestamp)) = menu::argument_finder(item, args, "timestamp") {
-        println!("Setting date/time to {:?}", timestamp);
+        osprintln!("Setting date/time to {:?}", timestamp);
         static DATE_FMT: &str = "%Y-%m-%dT%H:%M:%S";
         let Ok(timestamp) = chrono::NaiveDateTime::parse_from_str(timestamp, DATE_FMT) else {
-            println!("Unable to parse date/time");
+            osprintln!("Unable to parse date/time");
             return;
         };
         API.set_time(timestamp);
@@ -30,7 +30,7 @@ fn date(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &m
 
     let time = API.get_time();
     // Ensure this matches `DATE_FMT`, for consistency
-    println!(
+    osprintln!(
         "The time is {:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}",
         time.year(),
         time.month(),

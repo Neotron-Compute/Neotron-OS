@@ -2,7 +2,7 @@
 
 use embedded_sdmmc::VolumeIdx;
 
-use crate::{bios, print, println, Ctx};
+use crate::{bios, osprint, osprintln, Ctx};
 
 pub static DIR_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -28,7 +28,7 @@ pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
 /// Called when the "dir" command is executed.
 fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     fn work() -> Result<(), embedded_sdmmc::Error<bios::Error>> {
-        println!("Listing files on Block Device 0, /");
+        osprintln!("Listing files on Block Device 0, /");
         let bios_block = crate::fs::BiosBlock();
         let time = crate::fs::BiosTime();
         let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
@@ -41,46 +41,47 @@ fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &
             let padding = 8 - dir_entry.name.base_name().len();
             for b in dir_entry.name.base_name() {
                 let ch = *b as char;
-                print!("{}", if ch.is_ascii_graphic() { ch } else { '?' });
+                osprint!("{}", if ch.is_ascii_graphic() { ch } else { '?' });
             }
             for _ in 0..padding {
-                print!(" ");
+                osprint!(" ");
             }
-            print!(" ");
+            osprint!(" ");
             let padding = 3 - dir_entry.name.extension().len();
             for b in dir_entry.name.extension() {
                 let ch = *b as char;
-                print!("{}", if ch.is_ascii_graphic() { ch } else { '?' });
+                osprint!("{}", if ch.is_ascii_graphic() { ch } else { '?' });
             }
             for _ in 0..padding {
-                print!(" ");
+                osprint!(" ");
             }
             if dir_entry.attributes.is_directory() {
-                print!(" <DIR>        ");
+                osprint!(" <DIR>        ");
             } else {
-                print!(" {:-13}", dir_entry.size,);
+                osprint!(" {:-13}", dir_entry.size,);
             }
-            print!(
+            osprint!(
                 " {:02}/{:02}/{:04}",
                 dir_entry.mtime.zero_indexed_day + 1,
                 dir_entry.mtime.zero_indexed_month + 1,
                 u32::from(dir_entry.mtime.year_since_1970) + 1970
             );
-            println!(
+            osprintln!(
                 "  {:02}:{:02}",
-                dir_entry.mtime.hours, dir_entry.mtime.minutes
+                dir_entry.mtime.hours,
+                dir_entry.mtime.minutes
             );
             total_bytes += dir_entry.size as u64;
             num_files += 1;
         })?;
-        println!("{:-9} file(s)  {:-13} bytes", num_files, total_bytes);
+        osprintln!("{:-9} file(s)  {:-13} bytes", num_files, total_bytes);
         Ok(())
     }
 
     match work() {
         Ok(_) => {}
         Err(e) => {
-            println!("Error: {:?}", e);
+            osprintln!("Error: {:?}", e);
         }
     }
 }
@@ -88,13 +89,13 @@ fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &
 /// Called when the "load" command is executed.
 fn load(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
     let Some(filename) = args.first() else {
-        println!("Need a filename");
+        osprintln!("Need a filename");
         return;
     };
     match ctx.tpa.load_program(filename) {
         Ok(_) => {}
         Err(e) => {
-            println!("Error: {:?}", e);
+            osprintln!("Error: {:?}", e);
         }
     }
 }

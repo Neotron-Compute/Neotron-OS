@@ -1,6 +1,6 @@
 //! Configuration related commands for Neotron OS
 
-use crate::{config, println, Ctx};
+use crate::{config, osprintln, Ctx};
 
 pub static COMMAND_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -27,66 +27,66 @@ fn command(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         "reset" => match config::Config::load() {
             Ok(new_config) => {
                 ctx.config = new_config;
-                println!("Loaded OK.");
+                osprintln!("Loaded OK.");
             }
             Err(e) => {
-                println!("Error loading; {}", e);
+                osprintln!("Error loading; {}", e);
             }
         },
         "save" => match ctx.config.save() {
             Ok(_) => {
-                println!("Saved OK.");
+                osprintln!("Saved OK.");
             }
             Err(e) => {
-                println!("Error saving: {}", e);
+                osprintln!("Error saving: {}", e);
             }
         },
         "vga" => match args.get(1).cloned() {
             Some("on") => {
                 ctx.config.set_vga_console(true);
-                println!("VGA now on");
+                osprintln!("VGA now on");
             }
             Some("off") => {
                 ctx.config.set_vga_console(false);
-                println!("VGA now off");
+                osprintln!("VGA now off");
             }
             _ => {
-                println!("Give on or off as argument");
+                osprintln!("Give on or off as argument");
             }
         },
         "serial" => match (args.get(1).cloned(), args.get(1).map(|s| s.parse::<u32>())) {
             (_, Some(Ok(baud))) => {
-                println!("Turning serial console on at {} bps", baud);
+                osprintln!("Turning serial console on at {} bps", baud);
                 ctx.config.set_serial_console_on(baud);
             }
             (Some("off"), _) => {
-                println!("Turning serial console off");
+                osprintln!("Turning serial console off");
                 ctx.config.set_serial_console_off();
             }
             _ => {
-                println!("Give off or an integer as argument");
+                osprintln!("Give off or an integer as argument");
             }
         },
         "print" => {
-            println!("VGA   : {}", ctx.config.get_vga_console());
+            osprintln!("VGA   : {}", ctx.config.get_vga_console());
             match ctx.config.get_serial_console() {
                 None => {
-                    println!("Serial: off");
+                    osprintln!("Serial: off");
                 }
                 Some((_port, config)) => {
-                    println!("Serial: {} bps", config.data_rate_bps);
+                    osprintln!("Serial: {} bps", config.data_rate_bps);
                 }
             }
         }
         _ => {
-            println!("config print - print the config");
-            println!("config help - print this help text");
-            println!("config reset - load config from BIOS store");
-            println!("config save - save config to BIOS store");
-            println!("config vga on - turn VGA on");
-            println!("config vga off - turn VGA off");
-            println!("config serial off - turn serial console off");
-            println!("config serial <baud> - turn serial console on with given baud rate");
+            osprintln!("config print - print the config");
+            osprintln!("config help - print this help text");
+            osprintln!("config reset - load config from BIOS store");
+            osprintln!("config save - save config to BIOS store");
+            osprintln!("config vga on - turn VGA on");
+            osprintln!("config vga off - turn VGA off");
+            osprintln!("config serial off - turn serial console off");
+            osprintln!("config serial <baud> - turn serial console on with given baud rate");
         }
     }
 }

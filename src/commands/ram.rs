@@ -1,6 +1,6 @@
 //! Raw RAM read/write related commands for Neotron OS
 
-use crate::{print, println, Ctx};
+use crate::{osprint, osprintln, Ctx};
 
 pub static HEXDUMP_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -65,50 +65,50 @@ fn hexdump(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _ctx
     const BYTES_PER_LINE: usize = 16;
 
     let Some(address_str) = args.first() else {
-        println!("No address");
+        osprintln!("No address");
         return;
     };
     let Ok(address) = parse_usize(address_str) else {
-        println!("Bad address");
+        osprintln!("Bad address");
         return;
     };
     let len_str = args.get(1).unwrap_or(&"16");
     let Ok(len) = parse_usize(len_str) else {
-        println!("Bad length");
+        osprintln!("Bad length");
         return;
     };
 
     let mut ptr = address as *const u8;
 
     let mut this_line = 0;
-    print!("{:08x}: ", address);
+    osprint!("{:08x}: ", address);
     for count in 0..len {
         if this_line == BYTES_PER_LINE {
-            println!();
-            print!("{:08x}: ", address + count);
+            osprintln!();
+            osprint!("{:08x}: ", address + count);
             this_line = 1;
         } else {
             this_line += 1;
         }
 
         let b = unsafe { ptr.read_volatile() };
-        print!("{:02x} ", b);
+        osprint!("{:02x} ", b);
         ptr = unsafe { ptr.offset(1) };
     }
-    println!();
+    osprintln!();
 }
 
 /// Called when the "run" command is executed.
 fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
     match ctx.tpa.execute() {
         Ok(0) => {
-            println!();
+            osprintln!();
         }
         Ok(n) => {
-            println!("\nError Code: {}", n);
+            osprintln!("\nError Code: {}", n);
         }
         Err(e) => {
-            println!("\nFailed to execute: {:?}", e);
+            osprintln!("\nFailed to execute: {:?}", e);
         }
     }
 }
@@ -119,19 +119,19 @@ fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &m
 /// don't.
 fn loadf(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
     let Some(address_str) = args.first() else {
-        println!("No address");
+        osprintln!("No address");
         return;
     };
     let Ok(address) = parse_usize(address_str) else {
-        println!("Bad address");
+        osprintln!("Bad address");
         return;
     };
     let Some(len_str) = args.get(1) else {
-        println!("No length");
+        osprintln!("No length");
         return;
     };
     let Ok(len) = parse_usize(len_str) else {
-        println!("Bad length");
+        osprintln!("Bad length");
         return;
     };
 
@@ -139,10 +139,10 @@ fn loadf(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &
 
     match ctx.tpa.copy_program(src_slice) {
         Ok(_) => {
-            println!("Ok");
+            osprintln!("Ok");
         }
         Err(e) => {
-            println!("Error: {:?}", e);
+            osprintln!("Error: {:?}", e);
         }
     }
 }
