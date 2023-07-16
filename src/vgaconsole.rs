@@ -699,7 +699,7 @@ impl vte::Perform for ConsoleInner {
                     first = 1;
                 }
                 // We are zero-indexed, ANSI is 1-indexed
-                self.move_cursor_absolute(first - 1, 0);
+                self.move_cursor_absolute(self.row, first - 1);
             }
             'H' | 'f' => {
                 // Cursor Position (or Horizontal Vertical Position)
@@ -713,10 +713,66 @@ impl vte::Perform for ConsoleInner {
                 self.move_cursor_absolute(first - 1, second - 1);
             }
             'J' => {
-                // Erase in Display - todo
+                // Erase in Display
+                match first {
+                    0 => {
+                        // Erase the cursor through the end of the display
+                        for row in 0..self.height {
+                            for col in 0..self.width {
+                                if row > self.row || (row == self.row && col >= self.col) {
+                                    self.write_at(row, col, b' ', false);
+                                }
+                            }
+                        }
+                    }
+                    1 => {
+                        // Erase from the beginning of the display through the cursor
+                        for row in 0..self.height {
+                            for col in 0..self.width {
+                                if row < self.row || (row == self.row && col <= self.col) {
+                                    self.write_at(row, col, b' ', false);
+                                }
+                            }
+                        }
+                    }
+                    2 => {
+                        // Erase the complete display
+                        for row in 0..self.height {
+                            for col in 0..self.width {
+                                self.write_at(row, col, b' ', false);
+                            }
+                        }
+                    }
+                    _ => {
+                        // Ignore it
+                    }
+                }
             }
             'K' => {
-                // Erase in line - todo
+                // Erase in Line
+                match first {
+                    0 => {
+                        // Erase the cursor through the end of the line
+                        for col in self.col..self.width {
+                            self.write_at(self.row, col, b' ', false);
+                        }
+                    }
+                    1 => {
+                        // Erase from the beginning of the line through the cursor
+                        for col in 0..=self.col {
+                            self.write_at(self.row, col, b' ', false);
+                        }
+                    }
+                    2 => {
+                        // Erase the complete line
+                        for col in 0..self.width {
+                            self.write_at(self.row, col, b' ', false);
+                        }
+                    }
+                    _ => {
+                        // Ignore it
+                    }
+                }
             }
             'n' if first == 6 => {
                 // Device Status Report - todo.
@@ -763,6 +819,10 @@ mod tests {
     const WIDTH: usize = 12;
     const HEIGHT: usize = 7;
 
+    /// Convert a text buffer into a string we can compare against.
+    ///
+    /// Each glyph and attribute is printed like "xx yy", separated by "|" for
+    /// each column, and "\n" for each row.
     fn print_buffer(buffer: &[u8]) -> String {
         use std::fmt::Write;
         let mut output = String::new();
@@ -782,8 +842,6 @@ mod tests {
         let mut buffer = [0u8; WIDTH * HEIGHT * 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"Hello\n");
-        assert_eq!(console.inner.row, 1);
-        assert_eq!(console.inner.col, 0);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -795,6 +853,8 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 0);
     }
 
     #[test]
@@ -805,7 +865,7 @@ mod tests {
         // Second row
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 0);
-        // And the '1' has replaced the 0
+        // The '1' has replaced the 0
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -817,6 +877,9 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        // We are on the second row
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 0);
     }
 
     #[test]
@@ -874,9 +937,6 @@ mod tests {
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[1;1H1\n");
-        // We are on the second row
-        assert_eq!(console.inner.row, 1);
-        assert_eq!(console.inner.col, 0);
         // And the '1' has replaced the '0'
         assert_eq!(
             print_buffer(&buffer),
@@ -897,10 +957,7 @@ mod tests {
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[H1\n");
-        // We are on the second row
-        assert_eq!(console.inner.row, 1);
-        assert_eq!(console.inner.col, 0);
-        // And the '1' has replaced the '0'
+        // The '1' has replaced the '0'
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -912,6 +969,9 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        // We are on the second row
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 0);
     }
 
     #[test]
@@ -920,9 +980,6 @@ mod tests {
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"\x1b[2;2H1");
-        // We are on the second row
-        assert_eq!(console.inner.row, 1);
-        assert_eq!(console.inner.col, 2);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -934,6 +991,9 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        // We are on the second row
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 2);
     }
 
     #[test]
@@ -941,8 +1001,6 @@ mod tests {
         let mut buffer = [0u8; WIDTH * HEIGHT * 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"\x1b[0m1");
-        assert_eq!(console.inner.row, 0);
-        assert_eq!(console.inner.col, 1);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -954,6 +1012,8 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 0);
+        assert_eq!(console.inner.col, 1);
     }
 
     #[test]
@@ -1107,8 +1167,6 @@ mod tests {
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, print 0\n then go up a line and replace the 0 with a 1
         console.write_bstr(b"\x1b[H0\n\x1b[A1");
-        assert_eq!(console.inner.row, 0);
-        assert_eq!(console.inner.col, 1);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1120,10 +1178,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
-        // Go home, print 0\n then go up a line and replace the 0 with a 2
-        console.write_bstr(b"\x1b[H0\n\x1b[0A2");
         assert_eq!(console.inner.row, 0);
         assert_eq!(console.inner.col, 1);
+        // Go home, print 0\n then go up a line and replace the 0 with a 2
+        console.write_bstr(b"\x1b[H0\n\x1b[0A2");
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1135,10 +1193,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
-        // Go home, print 0\n then go up a line and replace the 0 with a 3
-        console.write_bstr(b"\x1b[H0\n\x1b[1A3");
         assert_eq!(console.inner.row, 0);
         assert_eq!(console.inner.col, 1);
+        // Go home, print 0\n then go up a line and replace the 0 with a 3
+        console.write_bstr(b"\x1b[H0\n\x1b[1A3");
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1150,10 +1208,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 0);
+        assert_eq!(console.inner.col, 1);
         // Go home then print 40\n50\n60\n7 then go up two lines and replace the 0 of 50 with a 8
         console.write_bstr(b"\x1b[H40\n50\n60\n7\x1b[2A8");
-        assert_eq!(console.inner.row, 1);
-        assert_eq!(console.inner.col, 2);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1165,6 +1223,8 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 2);
     }
 
     #[test]
@@ -1173,8 +1233,6 @@ mod tests {
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, go down 1 line, and print 0
         console.write_bstr(b"\x1b[H\x1b[B0");
-        assert_eq!(console.inner.row, 1);
-        assert_eq!(console.inner.col, 1);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1186,10 +1244,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
         // go down 1 line, and print 1
         console.write_bstr(b"\x1b[0B1");
-        assert_eq!(console.inner.row, 2);
-        assert_eq!(console.inner.col, 2);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1201,10 +1259,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 2);
+        assert_eq!(console.inner.col, 2);
         // go down 1 line, and print 2
         console.write_bstr(b"\x1b[1B2");
-        assert_eq!(console.inner.row, 3);
-        assert_eq!(console.inner.col, 3);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1216,10 +1274,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 3);
+        assert_eq!(console.inner.col, 3);
         // go down 2 lines, and print 3
         console.write_bstr(b"\x1b[2B3");
-        assert_eq!(console.inner.row, 5);
-        assert_eq!(console.inner.col, 4);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1231,6 +1289,8 @@ mod tests {
         00 00|00 00|00 00|33 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 5);
+        assert_eq!(console.inner.col, 4);
     }
 
     #[test]
@@ -1320,8 +1380,6 @@ mod tests {
         // Go home, print xxx, go down 1 line, and print 0
         console.write_bstr(b"\x1b[Hxxx\x1b[E0");
         // We should have returned to col 0 for the '0' so are in col 1
-        assert_eq!(console.inner.row, 1);
-        assert_eq!(console.inner.col, 1);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1333,10 +1391,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
         // go down 1 line, and print 1
         console.write_bstr(b"xxx\x1b[0E1");
-        assert_eq!(console.inner.row, 2);
-        assert_eq!(console.inner.col, 1);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1348,10 +1406,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 2);
+        assert_eq!(console.inner.col, 1);
         // go down 1 line, and print 2
         console.write_bstr(b"xxx\x1b[1E2");
-        assert_eq!(console.inner.row, 3);
-        assert_eq!(console.inner.col, 1);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1363,10 +1421,10 @@ mod tests {
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 3);
+        assert_eq!(console.inner.col, 1);
         // go down 2 lines, and print 3
         console.write_bstr(b"xxx\x1b[2E3");
-        assert_eq!(console.inner.row, 5);
-        assert_eq!(console.inner.col, 1);
         assert_eq!(
             print_buffer(&buffer),
             "\
@@ -1378,16 +1436,215 @@ mod tests {
         33 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
         00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
         );
+        assert_eq!(console.inner.row, 5);
+        assert_eq!(console.inner.col, 1);
     }
 
-    /*
-    'E' => Cursor next line
-    'F' => Cursor previous line
-    'G' => Cursor horizontal absolute
-    'H' | 'f' => Cursor Position (or Horizontal Vertical Position)
-    'J' => Erase in Display - todo
-    'K' => Erase in line - todo
-         */
+    #[test]
+    fn cursor_previous_line() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        // Print xx, xx, 11, 22, 33, 456 on the first five lines
+        // Then go back and replace 4 with 7, 3 with 8, 2 with 9 and the first x with 0
+        console.write_bstr(b"xx\nxx\n11\n22\n33\n456\x1b[F7\x1b[0F8\x1b[1F9\x1b[2F0");
+        // We should be back up on the top row
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        30 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        78 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        39 07|31 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        38 07|32 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        37 07|33 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        34 07|35 07|36 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
+        );
+        assert_eq!(console.inner.row, 0);
+        assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn cursor_horizontal_absolute() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        // Print 12345 the replace the 3 with a 9
+        console.write_bstr(b"12345\x1b[3G9");
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        31 07|32 07|39 07|34 07|35 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
+        );
+        assert_eq!(console.inner.row, 0);
+        assert_eq!(console.inner.col, 3);
+    }
+
+    #[test]
+    fn cursor_position() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        // In row;col form.
+        console.write_bstr(b"xxx\x1b[H0\x1b[;3H1\x1b[2;H2\x1b[3;4H3");
+        // the 4 should be in the right-hand column, and the 5 should wrap
+        // around and start on the next row.
+        console.write_bstr(format!("\x1b[4;{}H45", WIDTH).as_bytes());
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        30 07|78 07|31 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        32 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|33 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|34 07|\n\
+        35 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
+        );
+        assert_eq!(console.inner.row, 4);
+        assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn erase_in_display_cursor_to_end() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+        console.write_bstr(b"\x1b[0J");
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        78 07|78 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        78 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n"
+        );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn erase_in_display_start_to_cursor() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+        console.write_bstr(b"\x1b[1J");
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
+        );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn erase_in_display_entire_screen() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+        console.write_bstr(b"\x1b[2J");
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n"
+        );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn erase_in_line_cursor_to_end() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+        console.write_bstr(b"\x1b[0K");
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        78 07|78 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        78 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
+        );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn erase_in_line_start_to_cursor() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+        console.write_bstr(b"\x1b[1K");
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        78 07|78 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        20 07|20 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
+        );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn erase_in_line_entire_line() {
+        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+        console.write_bstr(b"\x1b[2K");
+        assert_eq!(
+            print_buffer(&buffer),
+            "\
+        78 07|78 07|78 07|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|20 07|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n\
+        00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|00 00|\n"
+        );
+        assert_eq!(console.inner.row, 1);
+        assert_eq!(console.inner.col, 1);
+    }
 }
 
 // ===========================================================================
