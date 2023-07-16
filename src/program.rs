@@ -4,7 +4,7 @@ use embedded_sdmmc::File;
 
 use crate::{
     fs::{BiosBlock, BiosTime},
-    print, println,
+    osprint, osprintln,
 };
 
 #[allow(unused)]
@@ -90,7 +90,7 @@ impl FileSource {
         offset: u32,
         out_buffer: &mut [u8],
     ) -> Result<(), embedded_sdmmc::Error<neotron_common_bios::Error>> {
-        println!("Reading from {}", offset);
+        osprintln!("Reading from {}", offset);
         self.file.borrow_mut().seek_from_start(offset).unwrap();
         self.mgr
             .borrow_mut()
@@ -117,7 +117,7 @@ impl neotron_loader::traits::Source for &FileSource {
                 }
             }
 
-            println!("Reading from {}", offset);
+            osprintln!("Reading from {}", offset);
             self.file.borrow_mut().seek_from_start(offset).unwrap();
             self.mgr.borrow_mut().read(
                 &self.volume,
@@ -205,7 +205,7 @@ impl TransientProgramArea {
     ///
     /// The program must be in the Neotron Executable format.
     pub fn load_program(&mut self, file_name: &str) -> Result<(), Error> {
-        println!("Loading /{} from Block Device 0", file_name);
+        osprintln!("Loading /{} from Block Device 0", file_name);
         let bios_block = crate::fs::BiosBlock();
         let time = crate::fs::BiosTime();
         let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
@@ -227,7 +227,7 @@ impl TransientProgramArea {
             if ph.p_vaddr() as *mut u32 >= self.memory_bottom
                 && ph.p_type() == neotron_loader::ProgramHeader::PT_LOAD
             {
-                println!("Loading {} bytes to 0x{:08x}", ph.p_memsz(), ph.p_vaddr());
+                osprintln!("Loading {} bytes to 0x{:08x}", ph.p_memsz(), ph.p_vaddr());
                 let ram = unsafe {
                     core::slice::from_raw_parts_mut(ph.p_vaddr() as *mut u8, ph.p_memsz() as usize)
                 };
@@ -287,7 +287,7 @@ impl TransientProgramArea {
 extern "C" fn print_fn(data: *const u8, len: usize) {
     let slice = unsafe { core::slice::from_raw_parts(data, len) };
     if let Ok(s) = core::str::from_utf8(slice) {
-        print!("{}", s);
+        osprint!("{}", s);
     } else {
         // Ignore App output - not UTF-8
     }

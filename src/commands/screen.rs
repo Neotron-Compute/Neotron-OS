@@ -2,7 +2,7 @@
 
 use neotron_common_bios::video::{Attr, TextBackgroundColour, TextForegroundColour};
 
-use crate::{print, println, Ctx, API, VGA_CONSOLE};
+use crate::{osprint, osprintln, Ctx, API, VGA_CONSOLE};
 
 pub static CLEAR_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -54,7 +54,7 @@ fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
         let api = API.get();
         let mode = (api.video_get_mode)();
         let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
-            println!("Unable to get console size");
+            osprintln!("Unable to get console size");
             return;
         };
         // A range of printable ASCII compatible characters
@@ -102,9 +102,11 @@ fn bench(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx:
         let end = (api.time_ticks_get)();
         let delta = end.0 - start.0;
         let chars_per_second = (NUM_CHARS * (api.time_ticks_per_second)().0) / delta;
-        println!(
+        osprintln!(
             "{} chars in {} ticks, or {} chars per second",
-            NUM_CHARS, delta, chars_per_second
+            NUM_CHARS,
+            delta,
+            chars_per_second
         );
     }
 }
@@ -131,7 +133,7 @@ fn mandel(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx
     let api = API.get();
     let mode = (api.video_get_mode)();
     let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
-        println!("Unable to get screen size");
+        osprintln!("Unable to get screen size");
         return;
     };
 
@@ -141,7 +143,7 @@ fn mandel(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx
         for x_pos in 0..width {
             let x = (f64::from(x_pos) * 4.0 / f64::from(width)) - 2.0;
             let result = mandelbrot(x, y, 20);
-            print!("{}", glyphs[result as usize] as char);
+            osprint!("{}", glyphs[result as usize] as char);
         }
     }
 }
