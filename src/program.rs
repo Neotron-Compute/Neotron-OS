@@ -337,10 +337,19 @@ extern "C" fn api_write(
 ///
 /// If you hit the end of the file, you might get less data than you asked for.
 extern "C" fn api_read(
-    _fd: neotron_api::file::Handle,
-    _buffer: neotron_api::FfiBuffer,
+    fd: neotron_api::file::Handle,
+    mut buffer: neotron_api::FfiBuffer,
 ) -> neotron_api::Result<usize> {
-    neotron_api::Result::Err(neotron_api::Error::Unimplemented)
+    if fd == neotron_api::file::Handle::new_stdin() {
+        if let Some(buffer) = buffer.as_mut_slice() {
+            let count = unsafe { crate::STD_INPUT.get_data(buffer) };
+            Ok(count).into()
+        } else {
+            neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+        }
+    } else {
+        neotron_api::Result::Err(neotron_api::Error::BadHandle)
+    }
 }
 
 /// Move the file offset (for the given file handle) to the given position.

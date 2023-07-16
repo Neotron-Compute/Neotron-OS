@@ -44,6 +44,7 @@ panic = "abort"
 neotron-common-bios = "0.10"
 pc-keyboard = "0.7"
 r0 = "1.0"
+heapless = "0.7"
 postcard = "1.0"
 serde = { version = "1.0", default-features = false }
 menu = "0.3"
