@@ -15,7 +15,7 @@ pub static KBTEST_ITEM: menu::Item<Ctx> = menu::Item {
 fn kbtest(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     osprintln!("Press ESC to quit");
     loop {
-        if let Some(ev) = unsafe { crate::STD_INPUT.get_raw() } {
+        if let Some(ev) = crate::STD_INPUT.lock().get_raw() {
             osprintln!("Event: {ev:?}");
             if ev == pc_keyboard::DecodedKey::RawKey(pc_keyboard::KeyCode::Escape)
                 || ev == pc_keyboard::DecodedKey::Unicode('\u{001b}')

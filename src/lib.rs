@@ -13,15 +13,18 @@
 // ===========================================================================
 
 use core::sync::atomic::{AtomicBool, Ordering};
+
 use neotron_common_bios as bios;
 
 mod commands;
 mod config;
 mod fs;
 mod program;
+mod refcell;
 mod vgaconsole;
 
 pub use config::Config as OsConfig;
+use refcell::CsRefCell;
 
 // ===========================================================================
 // Global Variables
@@ -37,10 +40,10 @@ const SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH: i64 = 946684800;
 static API: Api = Api::new();
 
 /// We store our VGA console here.
-static mut VGA_CONSOLE: Option<vgaconsole::VgaConsole> = None;
+static VGA_CONSOLE: CsRefCell<Option<vgaconsole::VgaConsole>> = CsRefCell::new(None);
 
 /// We store our VGA console here.
-static mut SERIAL_CONSOLE: Option<SerialConsole> = None;
+static SERIAL_CONSOLE: CsRefCell<Option<SerialConsole>> = CsRefCell::new(None);
 
 /// Note if we are panicking right now.
 ///
@@ -48,7 +51,7 @@ static mut SERIAL_CONSOLE: Option<SerialConsole> = None;
 static IS_PANIC: AtomicBool = AtomicBool::new(false);
 
 /// Our keyboard controller
-static mut STD_INPUT: StdInput = StdInput::new();
+static STD_INPUT: CsRefCell<StdInput> = CsRefCell::new(StdInput::new());
 
 struct StdInput {
     keyboard: pc_keyboard::EventDecoder<pc_keyboard::layouts::AnyLayout>,
@@ -170,16 +173,20 @@ impl StdInput {
 #[macro_export]
 macro_rules! osprint {
     ($($arg:tt)*) => {
-        if let Some(ref mut console) = unsafe { &mut $crate::VGA_CONSOLE } {
-            #[allow(unused)]
-            use core::fmt::Write as _;
-            write!(console, $($arg)*).unwrap();
-        }
-        if let Some(ref mut console) = unsafe { &mut $crate::SERIAL_CONSOLE } {
-            #[allow(unused)]
-            use core::fmt::Write as _;
-            write!(console, $($arg)*).unwrap();
-        }
+        crate::VGA_CONSOLE.with(|guard| {
+            if let Some(console) = guard.as_mut() {
+                #[allow(unused)]
+                use core::fmt::Write as _;
+                write!(console, $($arg)*).unwrap();
+            }
+        }).unwrap();
+        crate::SERIAL_CONSOLE.with(|guard| {
+            if let Some(console) = guard.as_mut() {
+                #[allow(unused)]
+                use core::fmt::Write as _;
+                write!(console, $($arg)*).unwrap();
+            }
+        }).unwrap();
     };
 }
 
@@ -366,16 +373,17 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
                 height as isize,
             );
             vga.clear();
-            unsafe {
-                VGA_CONSOLE = Some(vga);
-            }
+            let mut guard = VGA_CONSOLE.try_lock().unwrap();
+            *guard = Some(vga);
+            drop(guard);
             osprintln!("\u{001b}[0mConfigured VGA console {}x{}", width, height);
         }
     }
 
     if let Some((idx, serial_config)) = config.get_serial_console() {
         let _ignored = (api.serial_configure)(idx, serial_config);
-        unsafe { SERIAL_CONSOLE = Some(SerialConsole(idx)) };
+        let mut guard = SERIAL_CONSOLE.try_lock().unwrap();
+        *guard = Some(SerialConsole(idx));
         osprintln!("Configured Serial console on Serial {}", idx);
     }
 
@@ -421,7 +429,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 
     loop {
         let mut buffer = [0u8; 16];
-        let count = unsafe { STD_INPUT.get_data(&mut buffer) };
+        let count = { STD_INPUT.lock().get_data(&mut buffer) };
         for b in &buffer[0..count] {
             menu.input_byte(*b);
         }

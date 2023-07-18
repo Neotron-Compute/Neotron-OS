@@ -41,7 +41,7 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-neotron-common-bios = "0.10"
+neotron-common-bios = { version = "0.11.0-alpha", git = "https://github.com/neotron-compute/neotron-common-bios", branch = "extra-functions" }
 pc-keyboard = "0.7"
 r0 = "1.0"
 heapless = "0.7"

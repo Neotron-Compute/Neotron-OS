@@ -42,14 +42,16 @@ pub static MANDEL_ITEM: menu::Item<Ctx> = menu::Item {
 
 /// Called when the "clear" command is executed.
 fn clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
-        console.clear();
+    let mut guard = VGA_CONSOLE.try_lock().unwrap();
+    if let Some(vga_console) = guard.as_mut() {
+        vga_console.clear();
     }
 }
 
 /// Called when the "fill" command is executed.
 fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+    let mut guard = VGA_CONSOLE.try_lock().unwrap();
+    if let Some(console) = guard.as_mut() {
         console.clear();
         let api = API.get();
         let mode = (api.video_get_mode)();
@@ -91,7 +93,8 @@ fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 /// Called when the "bench" command is executed.
 fn bench(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     const NUM_CHARS: u64 = 1_000_000;
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+    let mut guard = VGA_CONSOLE.try_lock().unwrap();
+    if let Some(console) = guard.as_mut() {
         let api = API.get();
         let start = (api.time_ticks_get)();
         console.clear();

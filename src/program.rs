@@ -319,10 +319,12 @@ extern "C" fn api_write(
     buffer: neotron_api::FfiByteSlice,
 ) -> neotron_api::Result<()> {
     if fd == neotron_api::file::Handle::new_stdout() {
-        if let Some(ref mut console) = unsafe { &mut crate::VGA_CONSOLE } {
+        let mut guard = crate::VGA_CONSOLE.try_lock().unwrap();
+        if let Some(console) = guard.as_mut() {
             console.write_bstr(buffer.as_slice());
         }
-        if let Some(ref mut console) = unsafe { &mut crate::SERIAL_CONSOLE } {
+        let mut guard = crate::SERIAL_CONSOLE.try_lock().unwrap();
+        if let Some(console) = guard.as_mut() {
             if let Err(_e) = console.write_bstr(buffer.as_slice()) {
                 return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
             }
@@ -342,7 +344,7 @@ extern "C" fn api_read(
 ) -> neotron_api::Result<usize> {
     if fd == neotron_api::file::Handle::new_stdin() {
         if let Some(buffer) = buffer.as_mut_slice() {
-            let count = unsafe { crate::STD_INPUT.get_data(buffer) };
+            let count = { crate::STD_INPUT.lock().get_data(buffer) };
             Ok(count).into()
         } else {
             neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
