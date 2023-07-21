@@ -42,7 +42,7 @@ static API: Api = Api::new();
 /// We store our VGA console here.
 static VGA_CONSOLE: CsRefCell<Option<vgaconsole::VgaConsole>> = CsRefCell::new(None);
 
-/// We store our VGA console here.
+/// We store our serial console here.
 static SERIAL_CONSOLE: CsRefCell<Option<SerialConsole>> = CsRefCell::new(None);
 
 /// Note if we are panicking right now.
@@ -146,20 +146,16 @@ impl StdInput {
             }
         }
 
-        // if let Some((uart_dev, _serial_conf)) = menu.context.config.get_serial_console() {
-        //     while !self.buffer.is_full() {
-        //         let mut buffer = [0u8];
-        //         let wrapper = neotron_common_bios::FfiBuffer::new(&mut buffer);
-        //         match (api.serial_read)(uart_dev, wrapper, neotron_common_bios::FfiOption::None) {
-        //             neotron_common_bios::ApiResult::Ok(n) if n >= 0 => {
-        //                 self.buffer.enqueue(buffer[0]).unwrap();
-        //             }
-        //             _ => {
-        //                 break;
-        //             }
-        //         }
-        //     }
-        // }
+        if let Some(console) = SERIAL_CONSOLE.lock().as_mut() {
+            while !self.buffer.is_full() {
+                let mut buffer = [0u8];
+                if let Ok(1) = console.read_data(&mut buffer) {
+                    self.buffer.enqueue(buffer[0]).unwrap();
+                } else {
+                    break;
+                }
+            }
+        }
 
         self.get_buffered_data(buffer)
     }
@@ -259,7 +255,8 @@ impl Api {
 struct SerialConsole(u8);
 
 impl SerialConsole {
-    fn write_bstr(&mut self, data: &[u8]) -> core::fmt::Result {
+    /// Write some bytes to the serial console
+    fn write_bstr(&mut self, data: &[u8]) {
         let api = API.get();
         let is_panic = IS_PANIC.load(Ordering::Relaxed);
         let res = (api.serial_write)(
@@ -273,7 +270,14 @@ impl SerialConsole {
         if !is_panic {
             res.unwrap();
         }
-        Ok(())
+    }
+
+    /// Try and get as many bytes as we can from the serial console.
+    fn read_data(&mut self, buffer: &mut [u8]) -> Result<usize, bios::Error> {
+        let api = API.get();
+        let ffi_buffer = bios::FfiBuffer::new(buffer);
+        let res = (api.serial_read)(self.0, ffi_buffer, bios::FfiOption::Some(bios::Timeout::new_ms(0)));
+        res.into()
     }
 }
 

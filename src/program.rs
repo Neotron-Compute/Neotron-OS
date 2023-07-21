@@ -319,15 +319,13 @@ extern "C" fn api_write(
     buffer: neotron_api::FfiByteSlice,
 ) -> neotron_api::Result<()> {
     if fd == neotron_api::file::Handle::new_stdout() {
-        let mut guard = crate::VGA_CONSOLE.try_lock().unwrap();
+        let mut guard = crate::VGA_CONSOLE.lock();
         if let Some(console) = guard.as_mut() {
             console.write_bstr(buffer.as_slice());
         }
-        let mut guard = crate::SERIAL_CONSOLE.try_lock().unwrap();
+        let mut guard = crate::SERIAL_CONSOLE.lock();
         if let Some(console) = guard.as_mut() {
-            if let Err(_e) = console.write_bstr(buffer.as_slice()) {
-                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
-            }
+            console.write_bstr(buffer.as_slice());
         }
         neotron_api::Result::Ok(())
     } else {
