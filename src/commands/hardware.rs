@@ -15,8 +15,14 @@ pub static SHUTDOWN_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
         function: shutdown,
         parameters: &[
-            menu::Parameter::Named { parameter_name: "reboot", help: Some("Reboot after shutting down") },
-            menu::Parameter::Named { parameter_name: "bootloader", help: Some("Reboot into the bootloader after shutting down") }
+            menu::Parameter::Named {
+                parameter_name: "reboot",
+                help: Some("Reboot after shutting down"),
+            },
+            menu::Parameter::Named {
+                parameter_name: "bootloader",
+                help: Some("Reboot into the bootloader after shutting down"),
+            },
         ],
     },
     command: "shutdown",

@@ -115,7 +115,7 @@ impl StdInput {
     /// The data you get might be cut in the middle of a UTF-8 character.
     fn get_data(&mut self, buffer: &mut [u8]) -> usize {
         let count = self.get_buffered_data(buffer);
-        if buffer.len() == 0 || count > 0 {
+        if buffer.is_empty() || count > 0 {
             return count;
         }
 
@@ -169,14 +169,14 @@ impl StdInput {
 #[macro_export]
 macro_rules! osprint {
     ($($arg:tt)*) => {
-        crate::VGA_CONSOLE.with(|guard| {
+        $crate::VGA_CONSOLE.with(|guard| {
             if let Some(console) = guard.as_mut() {
                 #[allow(unused)]
                 use core::fmt::Write as _;
                 write!(console, $($arg)*).unwrap();
             }
         }).unwrap();
-        crate::SERIAL_CONSOLE.with(|guard| {
+        $crate::SERIAL_CONSOLE.with(|guard| {
             if let Some(console) = guard.as_mut() {
                 #[allow(unused)]
                 use core::fmt::Write as _;
@@ -276,7 +276,11 @@ impl SerialConsole {
     fn read_data(&mut self, buffer: &mut [u8]) -> Result<usize, bios::Error> {
         let api = API.get();
         let ffi_buffer = bios::FfiBuffer::new(buffer);
-        let res = (api.serial_read)(self.0, ffi_buffer, bios::FfiOption::Some(bios::Timeout::new_ms(0)));
+        let res = (api.serial_read)(
+            self.0,
+            ffi_buffer,
+            bios::FfiOption::Some(bios::Timeout::new_ms(0)),
+        );
         res.into()
     }
 }
@@ -377,8 +381,9 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
                 height as isize,
             );
             vga.clear();
-            let mut guard = VGA_CONSOLE.try_lock().unwrap();
+            let mut guard = VGA_CONSOLE.lock();
             *guard = Some(vga);
+            // Drop the lock before trying to grab it again to print something!
             drop(guard);
             osprintln!("\u{001b}[0mConfigured VGA console {}x{}", width, height);
         }
@@ -386,8 +391,10 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 
     if let Some((idx, serial_config)) = config.get_serial_console() {
         let _ignored = (api.serial_configure)(idx, serial_config);
-        let mut guard = SERIAL_CONSOLE.try_lock().unwrap();
+        let mut guard = SERIAL_CONSOLE.lock();
         *guard = Some(SerialConsole(idx));
+        // Drop the lock before trying to grab it again to print something!
+        drop(guard);
         osprintln!("Configured Serial console on Serial {}", idx);
     }
 
