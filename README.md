@@ -10,13 +10,24 @@ This OS is a work in progress. We intend to support:
 * [x] Calling BIOS APIs
 * [x] Text mode VGA console
 * [x] Serial console
-* [ ] Starting a command-line shell application
-* [ ] Executing applications from RAM
-* [ ] MBR/FAT32 formatted block devices with standard open/close/read/write file semantics
+* [x] Running built-in commands from a shell
+* [x] Executing applications from RAM
+  * [x] Applications can print to stdout
+  * [ ] Applications can read from stdin
+  * [ ] Applications can open/close/read/write files
+* [x] MBR/FAT32 formatted block devices
+  * [x] Read blocks
+  * [x] Directory listing of /
+  * [ ] Write to files
+  * [ ] Delete files
+  * [ ] Change directory
+* [x] Load ELF binaries from disk
+* [ ] Changing text modes
 * [ ] Basic networking
 * [ ] Music playback
 * [ ] Various keyboard layouts
 * [ ] Ethernet / WiFi networking
+* [ ] Built-in scripting language
 
 ## Build instructions
 
@@ -55,20 +66,43 @@ See [`CHANGELOG.md`](./CHANGELOG.md)
 
 ## Licence
 
-    Neotron-OS Copyright (c) The Neotron Developers, 2022
+```text
+Neotron-OS Copyright (c) Jonathan 'theJPster' Pallant and The Neotron Developers, 2023
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+```
+
+See the full text in [LICENSE.txt](./LICENSE.txt). Broadly, we (the developers)
+interpret this to mean (and note that we are not lawyers and this is not
+legal advice) that if you give someone a Neotron computer, you must also give them
+one of:
+
+* Complete and corresponding source code (e.g. on disk, or as a link to your
+  **own** on-line Git repo) for any GPL components (e.g. the BIOS and the OS),
+  as supplied on the Neotron computer.
+* A written offer to provide complete and corresponding source code on
+  request.
+
+If you are not offering a Neotron computer commercially (i.e. you are not
+selling a board for commercial gain), and you are using an unmodified upstream
+version of the source code, then the third option is to give them:
+
+* A link to the tag/commit-hash on the relevant official Neotron Github
+  repository - <https://github.com/Neotron-Compute/Neotron-OS>.
+
+This is to ensure everyone always has the freedom to access the source code in
+their Neotron based computer.
 
 ## Contribution
 

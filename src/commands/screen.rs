@@ -2,7 +2,7 @@
 
 use neotron_common_bios::video::{Attr, TextBackgroundColour, TextForegroundColour};
 
-use crate::{print, println, Ctx, API, VGA_CONSOLE};
+use crate::{osprint, osprintln, Ctx, API, VGA_CONSOLE};
 
 pub static CLEAR_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -42,19 +42,21 @@ pub static MANDEL_ITEM: menu::Item<Ctx> = menu::Item {
 
 /// Called when the "clear" command is executed.
 fn clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
-        console.clear();
+    let mut guard = VGA_CONSOLE.try_lock().unwrap();
+    if let Some(vga_console) = guard.as_mut() {
+        vga_console.clear();
     }
 }
 
 /// Called when the "fill" command is executed.
 fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+    let mut guard = VGA_CONSOLE.try_lock().unwrap();
+    if let Some(console) = guard.as_mut() {
         console.clear();
         let api = API.get();
         let mode = (api.video_get_mode)();
         let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
-            println!("Unable to get console size");
+            osprintln!("Unable to get console size");
             return;
         };
         // A range of printable ASCII compatible characters
@@ -91,7 +93,8 @@ fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
 /// Called when the "bench" command is executed.
 fn bench(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     const NUM_CHARS: u64 = 1_000_000;
-    if let Some(ref mut console) = unsafe { &mut VGA_CONSOLE } {
+    let mut guard = VGA_CONSOLE.try_lock().unwrap();
+    if let Some(console) = guard.as_mut() {
         let api = API.get();
         let start = (api.time_ticks_get)();
         console.clear();
@@ -102,9 +105,11 @@ fn bench(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx:
         let end = (api.time_ticks_get)();
         let delta = end.0 - start.0;
         let chars_per_second = (NUM_CHARS * (api.time_ticks_per_second)().0) / delta;
-        println!(
+        osprintln!(
             "{} chars in {} ticks, or {} chars per second",
-            NUM_CHARS, delta, chars_per_second
+            NUM_CHARS,
+            delta,
+            chars_per_second
         );
     }
 }
@@ -131,7 +136,7 @@ fn mandel(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx
     let api = API.get();
     let mode = (api.video_get_mode)();
     let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
-        println!("Unable to get screen size");
+        osprintln!("Unable to get screen size");
         return;
     };
 
@@ -141,7 +146,7 @@ fn mandel(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx
         for x_pos in 0..width {
             let x = (f64::from(x_pos) * 4.0 / f64::from(width)) - 2.0;
             let result = mandelbrot(x, y, 20);
-            print!("{}", glyphs[result as usize] as char);
+            osprint!("{}", glyphs[result as usize] as char);
         }
     }
 }

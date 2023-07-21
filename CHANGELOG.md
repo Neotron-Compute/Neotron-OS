@@ -2,6 +2,17 @@
 
 ## Unreleased changes
 
+* None
+
+## v0.5.0
+
+* Switch to neotron-common-bios 0.11
+* Added "Shutdown" command
+* Added ANSI decoder for colour changes (SGI) and cursor position support
+* Added 'standard input' support for applications
+* Use new compare-and-swap BIOS API to implement mutexes, instead of `static mut`
+* OS now requires 256K Flash space
+
 ## v0.4.0
 
 * The `load` command now takes ELF binaries, not raw binaries.

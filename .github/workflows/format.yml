@@ -3,13 +3,15 @@ name: Format
 on: [push, pull_request]
 
 jobs:
-  check:
-
+  run_cargo_fmt:
+    name: Run cargo fmt
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v1
-    - name: Add Tool
-      run: rustup component add rustfmt
-    - name: Check Format
-      run: cargo fmt -- --check
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Add Tool
+        run: rustup component add rustfmt
+      - name: Check Format
+        run: cargo fmt -- --check
