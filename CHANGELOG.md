@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+* None
+
+## v0.5.0
+
 * Switch to neotron-common-bios 0.11
 * Added "Shutdown" command
 * Added ANSI decoder for colour changes (SGI) and cursor position support

@@ -172,7 +172,7 @@ checksum = "b9b8634a088b9d5b338a96b3f6ef45a3bc0b9c0f0d562c7d00e498265fd96e8f"
 
 [[package]]
 name = "neotron-os"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "embedded-sdmmc",
@@ -314,7 +314,7 @@ checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
 [[package]]
 name = "utf8parse"
 version = "0.2.1"
-source = "git+https://github.com/neotron-compute/vte?branch=limit-osc-raw-size#2e8ce644269d0c175d39102b0c3b75567f61b86e"
+source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
 
 [[package]]
 name = "void"
@@ -325,7 +325,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vte"
 version = "0.11.1"
-source = "git+https://github.com/neotron-compute/vte?branch=limit-osc-raw-size#2e8ce644269d0c175d39102b0c3b75567f61b86e"
+source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
 dependencies = [
  "arrayvec",
  "utf8parse",
@@ -335,7 +335,7 @@ dependencies = [
 [[package]]
 name = "vte_generate_state_changes"
 version = "0.1.1"
-source = "git+https://github.com/neotron-compute/vte?branch=limit-osc-raw-size#2e8ce644269d0c175d39102b0c3b75567f61b86e"
+source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
 dependencies = [
  "proc-macro2",
  "quote",
