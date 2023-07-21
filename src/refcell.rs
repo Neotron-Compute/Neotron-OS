@@ -94,8 +94,7 @@ impl<T> CsRefCell<T> {
 ///
 /// # Safety
 ///
-/// We use the BIOS critical sections to control access to the global lock, and
-/// refcell locks are only tested whilst holding the global lock. Thus it is now
+/// We use the BIOS critical sections to control access. Thus it is now
 /// thread-safe.
 unsafe impl<T> Sync for CsRefCell<T> {}
 
