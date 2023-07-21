@@ -7,6 +7,7 @@
 * Added ANSI decoder for colour changes (SGI) and cursor position support
 * Added 'standard input' support for applications
 * Use new compare-and-swap BIOS API to implement mutexes, instead of `static mut`
+* OS now requires 256K Flash space
 
 ## v0.4.0
 
