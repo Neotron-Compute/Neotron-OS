@@ -11,6 +11,24 @@ pub static LSHW_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("List all the BIOS hardware"),
 };
 
+pub static SHUTDOWN_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: shutdown,
+        parameters: &[
+            menu::Parameter::Named {
+                parameter_name: "reboot",
+                help: Some("Reboot after shutting down"),
+            },
+            menu::Parameter::Named {
+                parameter_name: "bootloader",
+                help: Some("Reboot into the bootloader after shutting down"),
+            },
+        ],
+    },
+    command: "shutdown",
+    help: Some("Shutdown the system"),
+};
+
 /// Called when the "lshw" command is executed.
 fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     let api = API.get();
@@ -102,5 +120,21 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
     }
     if !found {
         osprintln!("  None");
+    }
+}
+
+/// Called when the "shutdown" command is executed.
+fn shutdown(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &mut Ctx) {
+    let api = API.get();
+
+    if let Ok(Some(_)) = menu::argument_finder(item, args, "reboot") {
+        osprintln!("Rebooting...");
+        (api.power_control)(bios::PowerMode::Reset);
+    } else if let Ok(Some(_)) = menu::argument_finder(item, args, "bootloader") {
+        osprintln!("Rebooting into bootloader...");
+        (api.power_control)(bios::PowerMode::Bootloader);
+    } else {
+        osprintln!("Shutting down...");
+        (api.power_control)(bios::PowerMode::Off);
     }
 }

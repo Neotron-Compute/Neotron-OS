@@ -13,15 +13,18 @@
 // ===========================================================================
 
 use core::sync::atomic::{AtomicBool, Ordering};
+
 use neotron_common_bios as bios;
 
 mod commands;
 mod config;
 mod fs;
 mod program;
+mod refcell;
 mod vgaconsole;
 
 pub use config::Config as OsConfig;
+use refcell::CsRefCell;
 
 // ===========================================================================
 // Global Variables
@@ -37,15 +40,126 @@ const SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH: i64 = 946684800;
 static API: Api = Api::new();
 
 /// We store our VGA console here.
-static mut VGA_CONSOLE: Option<vgaconsole::VgaConsole> = None;
+static VGA_CONSOLE: CsRefCell<Option<vgaconsole::VgaConsole>> = CsRefCell::new(None);
 
-/// We store our VGA console here.
-static mut SERIAL_CONSOLE: Option<SerialConsole> = None;
+/// We store our serial console here.
+static SERIAL_CONSOLE: CsRefCell<Option<SerialConsole>> = CsRefCell::new(None);
 
 /// Note if we are panicking right now.
 ///
 /// If so, don't panic if a serial write fails.
 static IS_PANIC: AtomicBool = AtomicBool::new(false);
+
+/// Our keyboard controller
+static STD_INPUT: CsRefCell<StdInput> = CsRefCell::new(StdInput::new());
+
+struct StdInput {
+    keyboard: pc_keyboard::EventDecoder<pc_keyboard::layouts::AnyLayout>,
+    buffer: heapless::spsc::Queue<u8, 16>,
+}
+
+impl StdInput {
+    const fn new() -> StdInput {
+        StdInput {
+            keyboard: pc_keyboard::EventDecoder::new(
+                pc_keyboard::layouts::AnyLayout::Uk105Key(pc_keyboard::layouts::Uk105Key),
+                pc_keyboard::HandleControl::MapLettersToUnicode,
+            ),
+            buffer: heapless::spsc::Queue::new(),
+        }
+    }
+
+    fn get_buffered_data(&mut self, buffer: &mut [u8]) -> usize {
+        // If there is some data, get it.
+        let mut count = 0;
+        for slot in buffer.iter_mut() {
+            if let Some(n) = self.buffer.dequeue() {
+                *slot = n;
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Gets a raw event from the keyboard
+    fn get_raw(&mut self) -> Option<pc_keyboard::DecodedKey> {
+        let api = API.get();
+        match (api.hid_get_event)() {
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyPress(code))) => {
+                let pckb_ev = pc_keyboard::KeyEvent {
+                    code,
+                    state: pc_keyboard::KeyState::Down,
+                };
+                self.keyboard.process_keyevent(pckb_ev)
+            }
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyRelease(code))) => {
+                let pckb_ev = pc_keyboard::KeyEvent {
+                    code,
+                    state: pc_keyboard::KeyState::Up,
+                };
+                self.keyboard.process_keyevent(pckb_ev)
+            }
+            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::MouseInput(
+                _ignore,
+            ))) => None,
+            bios::ApiResult::Ok(bios::FfiOption::None) => {
+                // Do nothing
+                None
+            }
+            bios::ApiResult::Err(_e) => None,
+        }
+    }
+
+    /// Gets some input bytes, as UTF-8.
+    ///
+    /// The data you get might be cut in the middle of a UTF-8 character.
+    fn get_data(&mut self, buffer: &mut [u8]) -> usize {
+        let count = self.get_buffered_data(buffer);
+        if buffer.is_empty() || count > 0 {
+            return count;
+        }
+
+        // Nothing buffered - ask the keyboard for something
+        let decoded_key = self.get_raw();
+
+        match decoded_key {
+            Some(pc_keyboard::DecodedKey::Unicode(mut ch)) => {
+                if ch == '\n' {
+                    ch = '\r';
+                }
+                let mut buffer = [0u8; 6];
+                let s = ch.encode_utf8(&mut buffer);
+                for b in s.as_bytes() {
+                    // This will always fit
+                    self.buffer.enqueue(*b).unwrap();
+                }
+            }
+            Some(pc_keyboard::DecodedKey::RawKey(pc_keyboard::KeyCode::ArrowRight)) => {
+                // Load the ANSI sequence for a right arrow
+                for b in b"\x1b[0;77b" {
+                    // This will always fit
+                    self.buffer.enqueue(*b).unwrap();
+                }
+            }
+            _ => {
+                // Drop anything else
+            }
+        }
+
+        if let Some(console) = SERIAL_CONSOLE.lock().as_mut() {
+            while !self.buffer.is_full() {
+                let mut buffer = [0u8];
+                if let Ok(1) = console.read_data(&mut buffer) {
+                    self.buffer.enqueue(buffer[0]).unwrap();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        self.get_buffered_data(buffer)
+    }
+}
 
 // ===========================================================================
 // Macros
@@ -55,16 +169,20 @@ static IS_PANIC: AtomicBool = AtomicBool::new(false);
 #[macro_export]
 macro_rules! osprint {
     ($($arg:tt)*) => {
-        if let Some(ref mut console) = unsafe { &mut $crate::VGA_CONSOLE } {
-            #[allow(unused)]
-            use core::fmt::Write as _;
-            write!(console, $($arg)*).unwrap();
-        }
-        if let Some(ref mut console) = unsafe { &mut $crate::SERIAL_CONSOLE } {
-            #[allow(unused)]
-            use core::fmt::Write as _;
-            write!(console, $($arg)*).unwrap();
-        }
+        $crate::VGA_CONSOLE.with(|guard| {
+            if let Some(console) = guard.as_mut() {
+                #[allow(unused)]
+                use core::fmt::Write as _;
+                write!(console, $($arg)*).unwrap();
+            }
+        }).unwrap();
+        $crate::SERIAL_CONSOLE.with(|guard| {
+            if let Some(console) = guard.as_mut() {
+                #[allow(unused)]
+                use core::fmt::Write as _;
+                write!(console, $($arg)*).unwrap();
+            }
+        }).unwrap();
     };
 }
 
@@ -137,7 +255,8 @@ impl Api {
 struct SerialConsole(u8);
 
 impl SerialConsole {
-    fn write_bstr(&mut self, data: &[u8]) -> core::fmt::Result {
+    /// Write some bytes to the serial console
+    fn write_bstr(&mut self, data: &[u8]) {
         let api = API.get();
         let is_panic = IS_PANIC.load(Ordering::Relaxed);
         let res = (api.serial_write)(
@@ -151,7 +270,18 @@ impl SerialConsole {
         if !is_panic {
             res.unwrap();
         }
-        Ok(())
+    }
+
+    /// Try and get as many bytes as we can from the serial console.
+    fn read_data(&mut self, buffer: &mut [u8]) -> Result<usize, bios::Error> {
+        let api = API.get();
+        let ffi_buffer = bios::FfiBuffer::new(buffer);
+        let res = (api.serial_read)(
+            self.0,
+            ffi_buffer,
+            bios::FfiOption::Some(bios::Timeout::new_ms(0)),
+        );
+        res.into()
     }
 }
 
@@ -176,7 +306,6 @@ impl core::fmt::Write for SerialConsole {
 
 pub struct Ctx {
     config: config::Config,
-    keyboard: pc_keyboard::EventDecoder<pc_keyboard::layouts::AnyLayout>,
     tpa: program::TransientProgramArea,
 }
 
@@ -252,16 +381,20 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
                 height as isize,
             );
             vga.clear();
-            unsafe {
-                VGA_CONSOLE = Some(vga);
-            }
+            let mut guard = VGA_CONSOLE.lock();
+            *guard = Some(vga);
+            // Drop the lock before trying to grab it again to print something!
+            drop(guard);
             osprintln!("\u{001b}[0mConfigured VGA console {}x{}", width, height);
         }
     }
 
     if let Some((idx, serial_config)) = config.get_serial_console() {
         let _ignored = (api.serial_configure)(idx, serial_config);
-        unsafe { SERIAL_CONSOLE = Some(SerialConsole(idx)) };
+        let mut guard = SERIAL_CONSOLE.lock();
+        *guard = Some(SerialConsole(idx));
+        // Drop the lock before trying to grab it again to print something!
+        drop(guard);
         osprintln!("Configured Serial console on Serial {}", idx);
     }
 
@@ -287,10 +420,6 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 
     let mut ctx = Ctx {
         config,
-        keyboard: pc_keyboard::EventDecoder::new(
-            pc_keyboard::layouts::AnyLayout::Uk105Key(pc_keyboard::layouts::Uk105Key),
-            pc_keyboard::HandleControl::MapLettersToUnicode,
-        ),
         tpa: unsafe {
             // We have to trust the values given to us by the BIOS. If it lies, we will crash.
             program::TransientProgramArea::new(tpa_start, tpa_size)
@@ -310,68 +439,10 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
     let mut menu = menu::Runner::new(&commands::OS_MENU, &mut buffer, ctx);
 
     loop {
-        match (api.hid_get_event)() {
-            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyPress(code))) => {
-                let pckb_ev = pc_keyboard::KeyEvent {
-                    code,
-                    state: pc_keyboard::KeyState::Down,
-                };
-                if let Some(pc_keyboard::DecodedKey::Unicode(mut ch)) =
-                    menu.context.keyboard.process_keyevent(pckb_ev)
-                {
-                    if ch == '\n' {
-                        ch = '\r';
-                    }
-                    let mut buffer = [0u8; 6];
-                    let s = ch.encode_utf8(&mut buffer);
-                    for b in s.as_bytes() {
-                        menu.input_byte(*b);
-                    }
-                }
-            }
-            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::KeyRelease(code))) => {
-                let pckb_ev = pc_keyboard::KeyEvent {
-                    code,
-                    state: pc_keyboard::KeyState::Up,
-                };
-                if let Some(pc_keyboard::DecodedKey::Unicode(ch)) =
-                    menu.context.keyboard.process_keyevent(pckb_ev)
-                {
-                    let mut buffer = [0u8; 6];
-                    let s = ch.encode_utf8(&mut buffer);
-                    for b in s.as_bytes() {
-                        menu.input_byte(*b);
-                    }
-                }
-            }
-            bios::ApiResult::Ok(bios::FfiOption::Some(bios::hid::HidEvent::MouseInput(
-                _ignore,
-            ))) => {}
-            bios::ApiResult::Ok(bios::FfiOption::None) => {
-                // Do nothing
-            }
-            bios::ApiResult::Err(e) => {
-                osprintln!("Failed to get HID events: {:?}", e);
-            }
-        }
-        if let Some((uart_dev, _serial_conf)) = menu.context.config.get_serial_console() {
-            loop {
-                let mut buffer = [0u8; 8];
-                let wrapper = neotron_common_bios::FfiBuffer::new(&mut buffer);
-                match (api.serial_read)(uart_dev, wrapper, neotron_common_bios::FfiOption::None) {
-                    neotron_common_bios::ApiResult::Ok(n) if n == 0 => {
-                        break;
-                    }
-                    neotron_common_bios::ApiResult::Ok(n) => {
-                        for b in &buffer[0..n] {
-                            menu.input_byte(*b);
-                        }
-                    }
-                    _ => {
-                        break;
-                    }
-                }
-            }
+        let mut buffer = [0u8; 16];
+        let count = { STD_INPUT.lock().get_data(&mut buffer) };
+        for b in &buffer[0..count] {
+            menu.input_byte(*b);
         }
         (api.power_idle)();
     }
