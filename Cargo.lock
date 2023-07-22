@@ -314,7 +314,7 @@ checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
 [[package]]
 name = "utf8parse"
 version = "0.2.1"
-source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
+source = "git+https://github.com/alacritty/vte?rev=94e74f3a64f42d5dad4e3d42dbe8c23291038214#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
 
 [[package]]
 name = "void"
@@ -325,7 +325,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vte"
 version = "0.11.1"
-source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
+source = "git+https://github.com/alacritty/vte?rev=94e74f3a64f42d5dad4e3d42dbe8c23291038214#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
 dependencies = [
  "arrayvec",
  "utf8parse",
@@ -335,7 +335,7 @@ dependencies = [
 [[package]]
 name = "vte_generate_state_changes"
 version = "0.1.1"
-source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
+source = "git+https://github.com/alacritty/vte?rev=94e74f3a64f42d5dad4e3d42dbe8c23291038214#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
 dependencies = [
  "proc-macro2",
  "quote",
