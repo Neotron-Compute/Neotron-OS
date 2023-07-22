@@ -325,7 +325,8 @@ extern "C" fn api_write(
         }
         let mut guard = crate::SERIAL_CONSOLE.lock();
         if let Some(console) = guard.as_mut() {
-            console.write_bstr(buffer.as_slice());
+            // Ignore serial errors on stdout
+            let _ = console.write_bstr(buffer.as_slice());
         }
         neotron_api::Result::Ok(())
     } else {

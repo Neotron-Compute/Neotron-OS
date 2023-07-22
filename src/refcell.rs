@@ -51,17 +51,6 @@ impl<T> CsRefCell<T> {
         }
     }
 
-    /// Try and do something with the lock.
-    pub fn with<F, U>(&self, f: F) -> Result<U, LockError>
-    where
-        F: FnOnce(&mut CsRefCellGuard<T>) -> U,
-    {
-        let mut guard = self.try_lock()?;
-        let result = f(&mut guard);
-        drop(guard);
-        Ok(result)
-    }
-
     /// Lock the cell.
     ///
     /// If you can't lock it (because it is already locked), this function will panic.
