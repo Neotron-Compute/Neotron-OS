@@ -66,11 +66,11 @@ static STD_INPUT: CsRefCell<StdInput> = CsRefCell::new(StdInput::new());
 /// Prints to the screen
 #[macro_export]
 macro_rules! osprint {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => { {
         #[allow(unused)]
         use core::fmt::Write as _;
         let _ = write!(&$crate::CONSOLE, $($arg)*);
-    }
+    } }
 }
 
 /// Prints to the screen and puts a new-line on the end
