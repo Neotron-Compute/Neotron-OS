@@ -11,6 +11,7 @@ mod hardware;
 mod input;
 mod ram;
 mod screen;
+mod sound;
 mod timedate;
 
 pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
@@ -29,6 +30,7 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         &screen::CLS_ITEM,
         &input::KBTEST_ITEM,
         &hardware::SHUTDOWN_ITEM,
+        &sound::MIXER_ITEM,
     ],
     entry: None,
     exit: None,
