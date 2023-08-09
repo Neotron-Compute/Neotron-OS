@@ -31,6 +31,7 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         &input::KBTEST_ITEM,
         &hardware::SHUTDOWN_ITEM,
         &sound::MIXER_ITEM,
+        &sound::PLAY_ITEM,
     ],
     entry: None,
     exit: None,
