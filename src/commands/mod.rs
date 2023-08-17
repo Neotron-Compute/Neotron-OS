@@ -32,6 +32,7 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         &hardware::SHUTDOWN_ITEM,
         &sound::MIXER_ITEM,
         &sound::PLAY_ITEM,
+        &sound::MP3_ITEM,
     ],
     entry: None,
     exit: None,

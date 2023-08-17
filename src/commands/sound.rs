@@ -1,5 +1,7 @@
 //! Sound related commands for Neotron OS
 
+use core::convert::TryInto;
+
 use crate::{osprint, osprintln, Ctx, API};
 
 pub static MIXER_ITEM: menu::Item<Ctx> = menu::Item {
@@ -30,6 +32,18 @@ pub static PLAY_ITEM: menu::Item<Ctx> = menu::Item {
     },
     command: "play",
     help: Some("Play a raw 16-bit LE 48 kHz stereo file"),
+};
+
+pub static MP3_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: playmp3,
+        parameters: &[menu::Parameter::Mandatory {
+            parameter_name: "filename",
+            help: Some("Which file to play"),
+        }],
+    },
+    command: "mp3",
+    help: Some("Play an MP3 file"),
 };
 
 /// Called when the "mixer" command is executed.
@@ -162,6 +176,229 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
         Ok(())
     }
 
+    if let Err(e) = play_inner(args[0], ctx.tpa.as_slice_u8()) {
+        osprintln!("\nError during playback: {:?}", e);
+    }
+}
+
+/// Called when the "play" command is executed.
+fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
+    use core::slice::Chunks;
+    use adafruit_mp3_sys::Mp3;
+    const BUFF_SZ: usize = 512*2;
+    const CHUNK_SZ: usize = 512;
+    #[derive(Debug)]
+    struct Buffer {
+        pub mp3_byte_buffer: [u8; BUFF_SZ],
+        pub buff_start: usize,
+        pub buff_end: usize,
+    }
+    use core::fmt;
+    impl fmt::Display for Buffer {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(
+                f,
+                "start:{} end:{} used:{} avail:{} tail:{}",
+                self.buff_start,
+                self.buff_end,
+                self.used(),
+                self.available(),
+                self.tail_free()
+            )
+        }
+    }
+
+    impl Buffer {
+        pub fn new() -> Self {
+            Self {
+                mp3_byte_buffer: [0u8; BUFF_SZ],
+                buff_start: 0,
+                buff_end: 0,
+            }
+        }
+
+        /// How much data is in the buffer
+        pub fn used(&self) -> usize {
+            self.buff_end - self.buff_start
+        }
+
+        /// How much space is free in the buffer
+        pub fn available(&self) -> usize {
+            BUFF_SZ - self.used()
+        }
+
+        /// How much space is free at the end of the buffer
+        pub fn tail_free(&self) -> usize {
+            BUFF_SZ - self.buff_end
+        }
+
+        /// Shuffle all bytes along so that start of buffer == start of data
+        pub fn remove_unused(&mut self) {
+            if self.buff_start != 0 {
+                let used: usize = self.used();
+                for i in 0..used {
+                    self.mp3_byte_buffer[i] = self.mp3_byte_buffer[i + self.buff_start];
+                }
+                self.buff_start = 0;
+                self.buff_end = used;
+            }
+        }
+
+        /// Using the provided iterator, load more data into the buffer
+        pub fn load_more(&mut self, loader: &mut Chunks<'_, u8>) {
+            self.remove_unused();
+            while self.available() >= CHUNK_SZ {
+                let newdata = loader.next();
+                match newdata {
+                    Some(d) => {
+                        for i in 0..d.len() {
+                            self.mp3_byte_buffer[self.buff_end] = d[i];
+                            self.buff_end += 1;
+                        }
+                    }
+                    None => {
+                        return;
+                    }
+                }
+            }
+        }
+
+        /// Using the provided slice, load more data into the buffer.
+        /// Returns the number of bytes consumed
+        pub fn load_slice(&mut self, data: &[u8]) -> usize {
+            self.remove_unused();
+
+            let loadsize = usize::min(self.tail_free(), data.len());
+            for i in 0..loadsize {
+                self.mp3_byte_buffer[self.buff_end] = data[i];
+                self.buff_end += 1;
+            }
+            loadsize
+        }
+
+        /// Increment our "start pointer". use this as you consume slices from the start
+        pub fn increment_start(&mut self, increment: usize) {
+            self.buff_start += increment;
+            self.remove_unused();
+        }
+
+        /// Return a slice over the remaining data in the buffer
+        pub fn get_slice(&self) -> &[u8] {
+            &self.mp3_byte_buffer[self.buff_start..self.buff_end]
+        }
+    }
+
+    fn play_inner(
+        file_name: &str,
+        scratch: &mut [u8],
+    ) -> Result<(), embedded_sdmmc::Error<neotron_common_bios::Error>> {
+        osprintln!("Loading /{} from Block Device 0", file_name);
+        let bios_block = crate::fs::BiosBlock();
+        let time = crate::fs::BiosTime();
+        let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
+        // Open the first partition
+        let mut volume = mgr.get_volume(embedded_sdmmc::VolumeIdx(0))?;
+        let root_dir = mgr.open_root_dir(&volume)?;
+        let mut file = mgr.open_file_in_dir(
+            &mut volume,
+            &root_dir,
+            file_name,
+            embedded_sdmmc::Mode::ReadOnly,
+        )?;
+
+        let api = API.get();
+        let (mut filebuf, mut scratch) = scratch.split_at_mut(512);
+        let (mut buffer, mut scratch) = scratch.split_at_mut(4096); // 512 + 2304 == 2816
+        let mut bytes = 0;
+        let mut delta = 0;
+
+        let mut mp3dec = Mp3::new();
+        let mut mp3_file_buffer = Buffer::new();
+        osprintln!("\r {}", mp3_file_buffer);
+        // load initial data - this should indicate max file read size as well
+        let read_size = {
+            let bytes_read = mgr.read(&mut volume, &mut file, &mut filebuf)?;
+            let mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
+            if bytes_read != mp3_written {
+                osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
+            }
+            bytes_read
+        };
+        osprintln!("\r {}", mp3_file_buffer);
+        // fill mp3_file_buffer as much as possible on first pass so we can read + skip id3
+        while mp3_file_buffer.available() >= read_size {
+            let bytes_read = mgr.read(&mut volume, &mut file, &mut filebuf)?;
+            let mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
+            if bytes_read != mp3_written {
+                osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
+            }
+        }
+        let mut frame = mp3dec.get_next_frame_info(mp3_file_buffer.get_slice()).unwrap();
+        osprintln!("info: {:?}", frame);
+        osprintln!("\r {}", mp3_file_buffer);
+        let mut break_early = false;
+        while !file.eof() && !break_early {
+            // load another chunk if there is space in the mp3 file buffer
+            if mp3_file_buffer.available() > read_size {
+                let bytes_read = mgr.read(&mut volume, &mut file, &mut filebuf)?;
+                let mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
+                if bytes_read != mp3_written {
+                    osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
+                }
+            }
+
+            let newlen = mp3_file_buffer.used();
+            let oldlen = newlen;
+            let audio_out_i16_ptr = unsafe {core::mem::transmute::<&mut [u8],&mut [i16]>(buffer)};
+            match mp3dec.decode(mp3_file_buffer.get_slice(), newlen as i32, audio_out_i16_ptr) {
+                Ok(newlen) => {
+                    let consumed = oldlen as usize - newlen as usize;
+                    if consumed > mp3_file_buffer.used() {
+                        osprintln!("huh. out of data.");
+                        break_early = true;
+                    }
+                    mp3_file_buffer.increment_start(consumed);
+                    // osprintln!("buffer: {}", mp3_file_buffer);
+                }
+                Err(e) => {
+                    if e == adafruit_mp3_sys::DecodeErr::InDataUnderflow {
+                        osprintln!("ran out of data while decoding");
+                        let bytes_read = mgr.read(&mut volume, &mut file, &mut buffer)?;
+                        let _mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
+                        break_early = true;
+                    }
+                }
+            }
+            // get info about the last frame decoded
+            frame = mp3dec.get_last_frame_info();
+            let bytes_read = (frame.outputSamps) as usize;
+
+            let mut buffer = &buffer[0..bytes_read];
+            while !buffer.is_empty() && !break_early{
+                let slice = neotron_common_bios::FfiByteSlice::new(buffer);
+                let played = unsafe { (api.audio_output_data)(slice).unwrap() };
+                buffer = &buffer[played..];
+                delta += played;
+                if delta > 48000 {
+                    bytes += delta;
+                    delta = 0;
+                    let milliseconds = bytes / ((48000 / 1000) * 4);
+                    // cut playback short, make testing snappier
+                    let seconds = milliseconds / 1000;
+                    // if seconds > 1 {
+                    //     break_early = true;
+                    // }
+                    osprint!(
+                        "\rPlayed: {}:{} ms",
+                        seconds,
+                        milliseconds % 1000
+                    );
+                }
+            }
+        }
+        osprintln!();
+        Ok(())
+    }
     if let Err(e) = play_inner(args[0], ctx.tpa.as_slice_u8()) {
         osprintln!("\nError during playback: {:?}", e);
     }

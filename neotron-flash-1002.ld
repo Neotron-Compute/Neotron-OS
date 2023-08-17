@@ -31,7 +31,7 @@ MEMORY
      * Cortex-M based platform, it's the start of Cortex-M SRAM, plus 4 KiB, or
      * 0x2000_1000.
      */
-    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 4K
+    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
