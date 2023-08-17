@@ -308,7 +308,7 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
 
         let api = API.get();
         let (mut filebuf, mut scratch) = scratch.split_at_mut(512);
-        let (mut buffer, mut scratch) = scratch.split_at_mut(4096); // 512 + 2304 == 2816
+        let (mut buffer, mut scratch) = scratch.split_at_mut(8196);
         let mut bytes = 0;
         let mut delta = 0;
 
@@ -371,7 +371,8 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
             }
             // get info about the last frame decoded
             frame = mp3dec.get_last_frame_info();
-            let bytes_read = (frame.outputSamps) as usize;
+            // samples are assumed 16bits - todo: handle 8bits
+            let bytes_read = (frame.outputSamps) as usize * 2;
 
             let mut buffer = &buffer[0..bytes_read];
             while !buffer.is_empty() && !break_early{
