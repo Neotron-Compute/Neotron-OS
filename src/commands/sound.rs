@@ -331,6 +331,8 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
                 osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
             }
         }
+        let start = Mp3::find_sync_word(mp3_file_buffer.get_slice()) as usize;
+        mp3_file_buffer.increment_start(start);
         let mut frame = mp3dec
             .get_next_frame_info(mp3_file_buffer.get_slice())
             .unwrap();
@@ -386,17 +388,22 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
 
             // double all samples for now. this works best with a mono mp3
             if framedouble {
-                for i in 0..frame.outputSamps as usize {
-                    let in_offset = 2 * i;
-                    let out_offset = 4 * i;
+                for i in 0..(frame.outputSamps/2) as usize {
+                    let in_offset = 4 * i;
+                    let out_offset = 8 * i;
                     // left
                     buffer2[out_offset] = buffer[in_offset + 0];
                     buffer2[out_offset + 1] = buffer[in_offset + 1];
                     // right
-                    buffer2[out_offset + 2] = buffer[in_offset + 0];
-                    buffer2[out_offset + 3] = buffer[in_offset + 1];
+                    buffer2[out_offset + 2] = buffer[in_offset + 2];
+                    buffer2[out_offset + 3] = buffer[in_offset + 3];
+                    // left
+                    buffer2[out_offset + 4] = buffer[in_offset + 0];
+                    buffer2[out_offset + 5] = buffer[in_offset + 1];
+                    // right
+                    buffer2[out_offset + 6] = buffer[in_offset + 2];
+                    buffer2[out_offset + 7] = buffer[in_offset + 3];
                 }
-
             }
 
             let mut buffer3 = if framedouble {
