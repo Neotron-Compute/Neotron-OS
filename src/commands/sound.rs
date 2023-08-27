@@ -1,6 +1,5 @@
 //! Sound related commands for Neotron OS
 
-use core::convert::TryInto;
 
 use crate::{osprint, osprintln, Ctx, API};
 
@@ -184,7 +183,7 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
 /// Called when the "play" command is executed.
 fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
     use core::slice::Chunks;
-    use adafruit_mp3_sys::Mp3;
+    use picomp3lib_rs::Mp3;
     const BUFF_SZ: usize = 512*2;
     const CHUNK_SZ: usize = 512;
     #[derive(Debug)]
@@ -307,10 +306,9 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         )?;
 
         let api = API.get();
-        let (mut filebuf, mut scratch) = scratch.split_at_mut(512);
-        let (mut buffer, mut scratch) = scratch.split_at_mut(8196);
-        let mut bytes = 0;
-        let mut delta = 0;
+        let (mut filebuf, scratch) = scratch.split_at_mut(512);
+        let (mut buffer, scratch) = scratch.split_at_mut(8196);
+        let (buffer2, _scratch) = scratch.split_at_mut(8196 * 2);
 
         let mut mp3dec = Mp3::new();
         let mut mp3_file_buffer = Buffer::new();
@@ -333,9 +331,12 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
                 osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
             }
         }
-        let mut frame = mp3dec.get_next_frame_info(mp3_file_buffer.get_slice()).unwrap();
+        let mut frame = mp3dec
+            .get_next_frame_info(mp3_file_buffer.get_slice())
+            .unwrap();
         osprintln!("info: {:?}", frame);
         osprintln!("\r {}", mp3_file_buffer);
+
         let mut break_early = false;
         while !file.eof() && !break_early {
             // load another chunk if there is space in the mp3 file buffer
@@ -349,8 +350,13 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
 
             let newlen = mp3_file_buffer.used();
             let oldlen = newlen;
-            let audio_out_i16_ptr = unsafe {core::mem::transmute::<&mut [u8],&mut [i16]>(buffer)};
-            match mp3dec.decode(mp3_file_buffer.get_slice(), newlen as i32, audio_out_i16_ptr) {
+            let audio_out_i16_ptr =
+                unsafe { core::mem::transmute::<&mut [u8], &mut [i16]>(buffer) };
+            match mp3dec.decode(
+                mp3_file_buffer.get_slice(),
+                newlen as i32,
+                audio_out_i16_ptr,
+            ) {
                 Ok(newlen) => {
                     let consumed = oldlen as usize - newlen as usize;
                     if consumed > mp3_file_buffer.used() {
@@ -361,7 +367,7 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
                     // osprintln!("buffer: {}", mp3_file_buffer);
                 }
                 Err(e) => {
-                    if e == adafruit_mp3_sys::DecodeErr::InDataUnderflow {
+                    if e == picomp3lib_rs::DecodeErr::InDataUnderflow {
                         osprintln!("ran out of data while decoding");
                         let bytes_read = mgr.read(&mut volume, &mut file, &mut buffer)?;
                         let _mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
@@ -371,30 +377,38 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
             }
             // get info about the last frame decoded
             frame = mp3dec.get_last_frame_info();
-            // samples are assumed 16bits - todo: handle 8bits
-            let bytes_read = (frame.outputSamps) as usize * 2;
 
-            let mut buffer = &buffer[0..bytes_read];
-            while !buffer.is_empty() && !break_early{
-                let slice = neotron_common_bios::FfiByteSlice::new(buffer);
-                let played = unsafe { (api.audio_output_data)(slice).unwrap() };
-                buffer = &buffer[played..];
-                delta += played;
-                if delta > 48000 {
-                    bytes += delta;
-                    delta = 0;
-                    let milliseconds = bytes / ((48000 / 1000) * 4);
-                    // cut playback short, make testing snappier
-                    let seconds = milliseconds / 1000;
-                    // if seconds > 1 {
-                    //     break_early = true;
-                    // }
-                    osprint!(
-                        "\rPlayed: {}:{} ms",
-                        seconds,
-                        milliseconds % 1000
-                    );
+            // codec doesn't support any samplerate except for 48khz stereo yet.
+            // do some simple frame doubling to make audio performance possible
+            let framedouble = frame.samprate <= 24000 || frame.nChans == 1;
+            let bytes_read = (frame.outputSamps) as usize * 2;
+            let buffer = &buffer[0..bytes_read];
+
+            // double all samples for now. this works best with a mono mp3
+            if framedouble {
+                for i in 0..frame.outputSamps as usize {
+                    let in_offset = 2 * i;
+                    let out_offset = 4 * i;
+                    // left
+                    buffer2[out_offset] = buffer[in_offset + 0];
+                    buffer2[out_offset + 1] = buffer[in_offset + 1];
+                    // right
+                    buffer2[out_offset + 2] = buffer[in_offset + 0];
+                    buffer2[out_offset + 3] = buffer[in_offset + 1];
                 }
+
+            }
+
+            let mut buffer3 = if framedouble {
+                &buffer2[0..(bytes_read * 2)]
+            } else {
+                &buffer[0..(bytes_read)]
+            };
+
+            while !buffer3.is_empty() && !break_early {
+                let slice = neotron_common_bios::FfiByteSlice::new(buffer3);
+                let played = unsafe { (api.audio_output_data)(slice).unwrap() };
+                buffer3 = &buffer3[played..];
             }
         }
         osprintln!();
