@@ -1,7 +1,5 @@
 //! Sound related commands for Neotron OS
 
-use core::num;
-
 use crate::{osprint, osprintln, Ctx, API};
 
 pub static MIXER_ITEM: menu::Item<Ctx> = menu::Item {
