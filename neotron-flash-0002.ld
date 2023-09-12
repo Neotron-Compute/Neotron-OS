@@ -27,7 +27,7 @@ MEMORY
      * We get the bottom 4KB of RAM. Anything above that is for applications
      * (up to wherever the BIOS tells us we can use.)
      */
-    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
+    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 4K
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
