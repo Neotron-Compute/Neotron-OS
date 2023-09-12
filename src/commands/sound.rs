@@ -181,7 +181,7 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
     }
 }
 
-/// Called when the "play" command is executed.
+/// Called when the "mp3" command is executed.
 fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
     use picomp3lib_rs::easy_mode::{self, EasyModeErr};
 
