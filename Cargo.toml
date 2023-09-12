@@ -31,7 +31,7 @@ crate-type = ["rlib", "cdylib"]
 required-features = ["native-log"]
 
 [profile.release]
-lto = "thin"
+lto = true
 debug = true
 codegen-units = 1
 opt-level = "z"
