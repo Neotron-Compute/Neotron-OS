@@ -53,7 +53,7 @@ embedded-sdmmc = { version = "0.5", default-features = false }
 neotron-api = "0.1"
 neotron-loader = "0.1"
 vte = { git = "https://github.com/alacritty/vte", rev = "94e74f3a64f42d5dad4e3d42dbe8c23291038214" }
-picomp3lib-rs = { git = "https://github.com/9names/picomp3lib-rs", rev = "f510ebcb782cd379f08488ab4a26399cd7b707b5", features = ["use-static-buffers"]}
+picomp3lib-rs = { git = "https://github.com/9names/picomp3lib-rs", rev = "1da98524e01d70afc6ab93616a68ecceca20db40", features = ["code-in-ram"]}
 
 [features]
 lib-mode = []

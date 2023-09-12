@@ -1,5 +1,6 @@
 //! Sound related commands for Neotron OS
 
+use core::num;
 
 use crate::{osprint, osprintln, Ctx, API};
 
@@ -182,110 +183,7 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
 
 /// Called when the "play" command is executed.
 fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
-    use core::slice::Chunks;
-    use picomp3lib_rs::Mp3;
-    const BUFF_SZ: usize = 512*2;
-    const CHUNK_SZ: usize = 512;
-    #[derive(Debug)]
-    struct Buffer {
-        pub mp3_byte_buffer: [u8; BUFF_SZ],
-        pub buff_start: usize,
-        pub buff_end: usize,
-    }
-    use core::fmt;
-    impl fmt::Display for Buffer {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(
-                f,
-                "start:{} end:{} used:{} avail:{} tail:{}",
-                self.buff_start,
-                self.buff_end,
-                self.used(),
-                self.available(),
-                self.tail_free()
-            )
-        }
-    }
-
-    impl Buffer {
-        pub fn new() -> Self {
-            Self {
-                mp3_byte_buffer: [0u8; BUFF_SZ],
-                buff_start: 0,
-                buff_end: 0,
-            }
-        }
-
-        /// How much data is in the buffer
-        pub fn used(&self) -> usize {
-            self.buff_end - self.buff_start
-        }
-
-        /// How much space is free in the buffer
-        pub fn available(&self) -> usize {
-            BUFF_SZ - self.used()
-        }
-
-        /// How much space is free at the end of the buffer
-        pub fn tail_free(&self) -> usize {
-            BUFF_SZ - self.buff_end
-        }
-
-        /// Shuffle all bytes along so that start of buffer == start of data
-        pub fn remove_unused(&mut self) {
-            if self.buff_start != 0 {
-                let used: usize = self.used();
-                for i in 0..used {
-                    self.mp3_byte_buffer[i] = self.mp3_byte_buffer[i + self.buff_start];
-                }
-                self.buff_start = 0;
-                self.buff_end = used;
-            }
-        }
-
-        /// Using the provided iterator, load more data into the buffer
-        pub fn load_more(&mut self, loader: &mut Chunks<'_, u8>) {
-            self.remove_unused();
-            while self.available() >= CHUNK_SZ {
-                let newdata = loader.next();
-                match newdata {
-                    Some(d) => {
-                        for i in 0..d.len() {
-                            self.mp3_byte_buffer[self.buff_end] = d[i];
-                            self.buff_end += 1;
-                        }
-                    }
-                    None => {
-                        return;
-                    }
-                }
-            }
-        }
-
-        /// Using the provided slice, load more data into the buffer.
-        /// Returns the number of bytes consumed
-        pub fn load_slice(&mut self, data: &[u8]) -> usize {
-            self.remove_unused();
-
-            let loadsize = usize::min(self.tail_free(), data.len());
-            for i in 0..loadsize {
-                self.mp3_byte_buffer[self.buff_end] = data[i];
-                self.buff_end += 1;
-            }
-            loadsize
-        }
-
-        /// Increment our "start pointer". use this as you consume slices from the start
-        pub fn increment_start(&mut self, increment: usize) {
-            self.buff_start += increment;
-            self.remove_unused();
-        }
-
-        /// Return a slice over the remaining data in the buffer
-        pub fn get_slice(&self) -> &[u8] {
-            &self.mp3_byte_buffer[self.buff_start..self.buff_end]
-        }
-    }
+    use picomp3lib_rs::easy_mode::{self, EasyModeErr};
 
     fn play_inner(
         file_name: &str,
@@ -306,119 +204,72 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         )?;
 
         let api = API.get();
-        let (mut filebuf, scratch) = scratch.split_at_mut(512);
-        let (mut buffer, scratch) = scratch.split_at_mut(8196);
-        let (buffer2, _scratch) = scratch.split_at_mut(8196 * 2);
 
-        let mut mp3dec = Mp3::new();
-        let mut mp3_file_buffer = Buffer::new();
-        osprintln!("\r {}", mp3_file_buffer);
-        // load initial data - this should indicate max file read size as well
-        let read_size = {
-            let bytes_read = mgr.read(&mut volume, &mut file, &mut filebuf)?;
-            let mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
-            if bytes_read != mp3_written {
-                osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
-            }
-            bytes_read
-        };
-        osprintln!("\r {}", mp3_file_buffer);
-        // fill mp3_file_buffer as much as possible on first pass so we can read + skip id3
-        while mp3_file_buffer.available() >= read_size {
-            let bytes_read = mgr.read(&mut volume, &mut file, &mut filebuf)?;
-            let mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
-            if bytes_read != mp3_written {
-                osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
-            }
+        // Space for 1 sector of data input. Maybe too drastic?
+        const DISK_READ_SIZE: usize = 512;
+        let (mut filebuf, scratch) = scratch.split_at_mut(DISK_READ_SIZE);
+
+        // Our audio output buffer. our audio is signed 16bit integers, make that easier to use
+        let (buffer, scratch) = scratch.split_at_mut(8196 + 2);
+        let (_head, audio_out_i16_1, _tail) = unsafe { buffer.align_to_mut::<i16>() };
+
+        // Memory for our MP3 decoder. Align to 32bit to make it safer to cast and faster to zero
+        let (mp3_mem, _scratch) = scratch.split_at_mut(46604 + 4);
+        let (_head, mp3_mem, _tail) = unsafe { mp3_mem.align_to_mut::<u32>() };
+
+        // Zero out our buffer to make it safe to treat as an uninit mp3 object
+        mp3_mem.fill_with(|| 0);
+        // It's not easy being greasy. Who likes allocators anyway?
+        // The MP3 library zero-init's this data so this should be good to go
+        // AVERT YOUR EYES
+        let mp3 = mp3_mem as *mut _ as *mut easy_mode::EasyMode;
+        let mp3 = unsafe { mp3.as_mut().unwrap() };
+
+        // fill internal mp3 data buffer as much as possible on first pass so we can read + skip id3
+        while mp3.buffer_free() >= DISK_READ_SIZE {
+            let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
+            // no need to check this, we already checked if there was enough room
+            let _mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
         }
-        let start = Mp3::find_sync_word(mp3_file_buffer.get_slice()) as usize;
-        mp3_file_buffer.increment_start(start);
-        let mut frame = mp3dec
-            .get_next_frame_info(mp3_file_buffer.get_slice())
-            .unwrap();
-        osprintln!("info: {:?}", frame);
-        osprintln!("\r {}", mp3_file_buffer);
 
-        let mut break_early = false;
-        while !file.eof() && !break_early {
-            // load another chunk if there is space in the mp3 file buffer
-            if mp3_file_buffer.available() > read_size {
-                let bytes_read = mgr.read(&mut volume, &mut file, &mut filebuf)?;
-                let mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
-                if bytes_read != mp3_written {
-                    osprintln!("mp3_file_buffer didn't have enough space, dropping bytes");
-                }
+        let frame = mp3.mp3_info();
+        osprintln!("mp3 details: {:?}", frame);
+
+        while !file.eof() {
+            if mp3.buffer_free() >= DISK_READ_SIZE {
+                let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
+                // no need to check this, we already checked if there was enough room
+                let _mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
             }
 
-            let newlen = mp3_file_buffer.used();
-            let oldlen = newlen;
-            let audio_out_i16_ptr =
-                unsafe { core::mem::transmute::<&mut [u8], &mut [i16]>(buffer) };
-            match mp3dec.decode(
-                mp3_file_buffer.get_slice(),
-                newlen as i32,
-                audio_out_i16_ptr,
-            ) {
-                Ok(newlen) => {
-                    let consumed = oldlen as usize - newlen as usize;
-                    if consumed > mp3_file_buffer.used() {
-                        osprintln!("huh. out of data.");
-                        break_early = true;
-                    }
-                    mp3_file_buffer.increment_start(consumed);
-                    // osprintln!("buffer: {}", mp3_file_buffer);
+            // save frames by not checking if our output buffer is large enough
+            let _audio_buffer_used = match unsafe { mp3.decode_unchecked(audio_out_i16_1) } {
+                Ok(used) => {
+                    // osprintln!("buffer: {}", _newlen);
+                    used
                 }
                 Err(e) => {
-                    if e == picomp3lib_rs::DecodeErr::InDataUnderflow {
+                    if e == EasyModeErr::InDataUnderflow {
                         osprintln!("ran out of data while decoding");
-                        let bytes_read = mgr.read(&mut volume, &mut file, &mut buffer)?;
-                        let _mp3_written = mp3_file_buffer.load_slice(&filebuf[0..bytes_read]);
-                        break_early = true;
+                        // force some more data in as a last-ditch effort to resume decoding
+                        let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
+                        let _mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
                     }
+                    0
                 }
-            }
-            // get info about the last frame decoded
-            frame = mp3dec.get_last_frame_info();
-
-            // codec doesn't support any samplerate except for 48khz stereo yet.
-            // do some simple frame doubling to make audio performance possible
-            let framedouble = frame.samprate <= 24000 || frame.nChans == 1;
-            let bytes_read = (frame.outputSamps) as usize * 2;
-            let buffer = &buffer[0..bytes_read];
-
-            // double all samples for now. this works best with a mono mp3
-            if framedouble {
-                for i in 0..(frame.outputSamps/2) as usize {
-                    let in_offset = 4 * i;
-                    let out_offset = 8 * i;
-                    // left
-                    buffer2[out_offset] = buffer[in_offset + 0];
-                    buffer2[out_offset + 1] = buffer[in_offset + 1];
-                    // right
-                    buffer2[out_offset + 2] = buffer[in_offset + 2];
-                    buffer2[out_offset + 3] = buffer[in_offset + 3];
-                    // left
-                    buffer2[out_offset + 4] = buffer[in_offset + 0];
-                    buffer2[out_offset + 5] = buffer[in_offset + 1];
-                    // right
-                    buffer2[out_offset + 6] = buffer[in_offset + 2];
-                    buffer2[out_offset + 7] = buffer[in_offset + 3];
-                }
-            }
-
-            let mut buffer3 = if framedouble {
-                &buffer2[0..(bytes_read * 2)]
-            } else {
-                &buffer[0..(bytes_read)]
             };
 
-            while !buffer3.is_empty() && !break_early {
-                let slice = neotron_common_bios::FfiByteSlice::new(buffer3);
-                let played = unsafe { (api.audio_output_data)(slice).unwrap() };
-                buffer3 = &buffer3[played..];
-            }
+            let _played = {
+                let buffer4 =
+                // unsafe { core::mem::transmute::<&mut [i16], &mut [u8]>(&mut audio_out_i16_1[0..audio_buffer_used]) };
+                // assume we filled the entire audio buffer, as the slice makes a surprising amount of perf impact.
+                // this should be okay for mpeg1 layer 3, but may cause incorrectly decoded frames to sound very bad
+                unsafe { core::mem::transmute::<&mut [i16], &mut [u8]>(audio_out_i16_1) };
+                let slice = neotron_common_bios::FfiByteSlice::new(buffer4);
+                unsafe { (api.audio_output_data)(slice).unwrap() }
+            };
         }
-        osprintln!();
+        osprintln!("done");
         Ok(())
     }
     if let Err(e) = play_inner(args[0], ctx.tpa.as_slice_u8()) {
