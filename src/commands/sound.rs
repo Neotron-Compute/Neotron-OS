@@ -205,7 +205,7 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
 
         // Space for 1 sector of data input. Maybe too drastic?
         const DISK_READ_SIZE: usize = 512;
-        let (mut filebuf, scratch) = scratch.split_at_mut(DISK_READ_SIZE);
+        let (filebuf, scratch) = scratch.split_at_mut(DISK_READ_SIZE);
 
         // Our audio output buffer. our audio is signed 16bit integers, make that easier to use
         let (buffer, scratch) = scratch.split_at_mut(8196 + 2);
@@ -215,10 +215,11 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         let (mp3_mem, _scratch) = scratch.split_at_mut(46604 + 4);
         let (_head, mp3_mem, _tail) = unsafe { mp3_mem.align_to_mut::<u32>() };
 
-        // Zero out our buffer to make it safe to treat as an uninit mp3 object
+        // Zero out our buffer to make it safe to treat as an initialised mp3 object
+        // The MP3 library would have zero-inited this data in it's constructor (which we're bypassing)
         mp3_mem.fill_with(|| 0);
+
         // It's not easy being greasy. Who likes allocators anyway?
-        // The MP3 library zero-init's this data so this should be good to go
         // AVERT YOUR EYES
         let mp3 = mp3_mem as *mut _ as *mut easy_mode::EasyMode;
         let mp3 = unsafe { mp3.as_mut().unwrap() };
@@ -240,32 +241,30 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
                 let _mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
             }
 
-            // save frames by not checking if our output buffer is large enough
-            let _audio_buffer_used = match unsafe { mp3.decode_unchecked(audio_out_i16_1) } {
+            // we save a bit of performance by not checking if audio_out_i16_1 is large enough
+            let audio_buffer_used = match unsafe { mp3.decode_unchecked(audio_out_i16_1) } {
                 Ok(used) => {
-                    // osprintln!("buffer: {}", _newlen);
                     used
                 }
                 Err(e) => {
                     if e == EasyModeErr::InDataUnderflow {
-                        osprintln!("ran out of data while decoding");
                         // force some more data in as a last-ditch effort to resume decoding
                         let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
-                        let _mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
+                        let mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
+                        osprintln!("ran out of data while decoding. loaded {mp3_written} more bytes");
                     }
                     0
                 }
             };
 
-            let _played = {
-                let buffer4 =
-                // unsafe { core::mem::transmute::<&mut [i16], &mut [u8]>(&mut audio_out_i16_1[0..audio_buffer_used]) };
-                // assume we filled the entire audio buffer, as the slice makes a surprising amount of perf impact.
+            if audio_buffer_used != 0 {
+                // assume we filled the entire audio buf. shortening the slice makes a surprising amount of perf impact.
                 // this should be okay for mpeg1 layer 3, but may cause incorrectly decoded frames to sound very bad
-                unsafe { core::mem::transmute::<&mut [i16], &mut [u8]>(audio_out_i16_1) };
-                let slice = neotron_common_bios::FfiByteSlice::new(buffer4);
-                unsafe { (api.audio_output_data)(slice).unwrap() }
-            };
+                let sys_audio_buffer =
+                    unsafe { core::mem::transmute::<&mut [i16], &mut [u8]>(audio_out_i16_1) };
+                let slice = neotron_common_bios::FfiByteSlice::new(sys_audio_buffer);
+                let _played = unsafe { (api.audio_output_data)(slice).unwrap() };
+            }
         }
         osprintln!("done");
         Ok(())
