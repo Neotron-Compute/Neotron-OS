@@ -56,8 +56,8 @@ vte = { git = "https://github.com/alacritty/vte", rev = "94e74f3a64f42d5dad4e3d4
 # code-in-ram REQUIRES that you have more memory allocated to the OS.
 # RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 9K
 # in neotron-flash-1002.ld should do the trick, but it's probably not safe.
-# picomp3lib-rs = { git = "https://github.com/9names/picomp3lib-rs", rev = "1da98524e01d70afc6ab93616a68ecceca20db40", features = ["code-in-ram"]}
-picomp3lib-rs = { git = "https://github.com/9names/picomp3lib-rs", rev = "1da98524e01d70afc6ab93616a68ecceca20db40"}
+# picomp3lib-rs = { git = "https://github.com/9names/picomp3lib-rs", rev = "2f256a5c1caf312f389892bf7197c926df48a2d7", features = ["code-in-ram"]}
+picomp3lib-rs = { git = "https://github.com/9names/picomp3lib-rs", rev = "2f256a5c1caf312f389892bf7197c926df48a2d7"}
 
 [features]
 lib-mode = []

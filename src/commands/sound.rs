@@ -228,8 +228,32 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         while mp3.buffer_free() >= DISK_READ_SIZE {
             let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
             // no need to check this, we already checked if there was enough room
-            let _mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
+            let _mp3_written = mp3.add_data_no_sync(&filebuf[0..bytes_read]);
         }
+
+        let id3 = mp3.find_id3v2();
+        let headerend = if let Some(id3) = id3 {
+            osprintln!(
+                "Found ID3v2 at offset {}. Tag version: 2.{}.{}, flags {}, length {}",
+                id3.0, id3.1, id3.2, id3.3, id3.4
+            );
+            // start of header + size of header + length
+            id3.0 + 10 + id3.4
+        } else {
+            0
+        };
+        if headerend != 0 {
+            let mut bytes_to_remove = headerend;
+            while bytes_to_remove > 0 {
+                bytes_to_remove -= mp3.buffer_skip(bytes_to_remove);
+                while mp3.buffer_free() >= DISK_READ_SIZE {
+                    let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
+                    mp3.add_data_no_sync(&filebuf[0..bytes_read]);
+                }
+            }
+        }
+        // up until now we haven't been looking for start of frame. add_data will do that
+        mp3.add_data(&[]);
 
         let frame = mp3.mp3_info();
         osprintln!("mp3 details: {:?}", frame);
