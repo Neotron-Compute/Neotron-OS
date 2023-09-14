@@ -235,7 +235,11 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         let headerend = if let Some(id3) = id3 {
             osprintln!(
                 "Found ID3v2 at offset {}. Tag version: 2.{}.{}, flags {}, length {}",
-                id3.0, id3.1, id3.2, id3.3, id3.4
+                id3.0,
+                id3.1,
+                id3.2,
+                id3.3,
+                id3.4
             );
             // start of header + size of header + length
             id3.0 + 10 + id3.4
@@ -255,8 +259,17 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         // up until now we haven't been looking for start of frame. add_data will do that
         mp3.add_data(&[]);
 
-        let frame = mp3.mp3_info();
+        if mp3.mp3_info().is_err() {
+            osprintln!("invalid mp3 frame, giving up");
+            return Ok(());
+        }
+
+        let frame = mp3.mp3_info().unwrap();
         osprintln!("mp3 details: {:?}", frame);
+        // The number of samples won't change at runtime
+        // set our audio slice length now to avoid runtime checks later
+        let samples = frame.outputSamps as usize;
+        let audio_out_i16_1 = &mut audio_out_i16_1[0..samples];
 
         while !file.eof() {
             if mp3.buffer_free() >= DISK_READ_SIZE {
@@ -267,15 +280,15 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
 
             // we save a bit of performance by not checking if audio_out_i16_1 is large enough
             let audio_buffer_used = match unsafe { mp3.decode_unchecked(audio_out_i16_1) } {
-                Ok(used) => {
-                    used
-                }
+                Ok(used) => used,
                 Err(e) => {
                     if e == EasyModeErr::InDataUnderflow {
                         // force some more data in as a last-ditch effort to resume decoding
                         let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
                         let mp3_written = mp3.add_data(&filebuf[0..bytes_read]);
-                        osprintln!("ran out of data while decoding. loaded {mp3_written} more bytes");
+                        osprintln!(
+                            "ran out of data while decoding. loaded {mp3_written} more bytes"
+                        );
                     }
                     0
                 }
