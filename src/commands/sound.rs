@@ -212,7 +212,8 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         let (_head, audio_out_i16_1, _tail) = unsafe { buffer.align_to_mut::<i16>() };
 
         // Memory for our MP3 decoder. Align to 32bit to make it safer to cast and faster to zero
-        let (mp3_mem, _scratch) = scratch.split_at_mut(46604 + 4);
+        let (mp3_mem, _scratch) =
+            scratch.split_at_mut(core::mem::size_of::<easy_mode::EasyMode>() + 4);
         let (_head, mp3_mem, _tail) = unsafe { mp3_mem.align_to_mut::<u32>() };
 
         // Zero out our buffer to make it safe to treat as an initialised mp3 object
@@ -224,44 +225,13 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         let mp3 = mp3_mem as *mut _ as *mut easy_mode::EasyMode;
         let mp3 = unsafe { mp3.as_mut().unwrap() };
 
-        // fill internal mp3 data buffer as much as possible on first pass so we can read + skip id3
-        while mp3.buffer_free() >= DISK_READ_SIZE {
-            let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
-            // no need to check this, we already checked if there was enough room
-            let _mp3_written = mp3.add_data_no_sync(&filebuf[0..bytes_read]);
-        }
-
-        let id3 = mp3.find_id3v2();
-        let headerend = if let Some(id3) = id3 {
-            osprintln!(
-                "Found ID3v2 at offset {}. Tag version: 2.{}.{}, flags {}, length {}",
-                id3.0,
-                id3.1,
-                id3.2,
-                id3.3,
-                id3.4
-            );
-            // start of header + size of header + length
-            id3.0 + 10 + id3.4
-        } else {
-            0
-        };
-        if headerend != 0 {
-            let mut bytes_to_remove = headerend;
-            while bytes_to_remove > 0 {
-                bytes_to_remove -= mp3.buffer_skip(bytes_to_remove);
-                while mp3.buffer_free() >= DISK_READ_SIZE {
-                    let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
-                    mp3.add_data_no_sync(&filebuf[0..bytes_read]);
-                }
+        // skip past the id3 tags and anything else up to the first mp3 sync tag
+        while !mp3.mp3_decode_ready() && !file.eof() {
+            while mp3.buffer_free() >= DISK_READ_SIZE && !file.eof() {
+                let bytes_read = mgr.read(&volume, &mut file, filebuf)?;
+                // no need to check this, we already checked if there was enough room
+                let _mp3_written = mp3.add_data_no_sync(&filebuf[0..bytes_read]);
             }
-        }
-        // up until now we haven't been looking for start of frame. add_data will do that
-        mp3.add_data(&[]);
-
-        if mp3.mp3_info().is_err() {
-            osprintln!("invalid mp3 frame, giving up");
-            return Ok(());
         }
 
         let frame = mp3.mp3_info().unwrap();
@@ -295,8 +265,7 @@ fn playmp3(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
             };
 
             if audio_buffer_used != 0 {
-                // assume we filled the entire audio buf. shortening the slice makes a surprising amount of perf impact.
-                // this should be okay for mpeg1 layer 3, but may cause incorrectly decoded frames to sound very bad
+                // if we decoded successfully, we filled audio_out_i16_1 with samples
                 let sys_audio_buffer =
                     unsafe { core::mem::transmute::<&mut [i16], &mut [u8]>(audio_out_i16_1) };
                 let slice = neotron_common_bios::FfiByteSlice::new(sys_audio_buffer);
