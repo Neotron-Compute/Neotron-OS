@@ -1,6 +1,6 @@
 //! Sound related commands for Neotron OS
 
-use crate::{osprint, osprintln, Ctx, API};
+use crate::{bios, osprint, osprintln, Ctx, API};
 
 pub static MIXER_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -53,7 +53,7 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
         let mut found = false;
         for mixer_id in 0u8..=255u8 {
             match (api.audio_mixer_channel_get_info)(mixer_id) {
-                neotron_common_bios::FfiOption::Some(mixer_info) => {
+                bios::FfiOption::Some(mixer_info) => {
                     if mixer_info.name.as_str() == selected_mixer {
                         if let Err(e) =
                             (api.audio_mixer_channel_set_level)(mixer_id, level_int).into()
@@ -70,7 +70,7 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
                         break;
                     }
                 }
-                neotron_common_bios::FfiOption::None => {
+                bios::FfiOption::None => {
                     break;
                 }
             }
@@ -84,11 +84,11 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
     osprintln!("Mixers:");
     for mixer_id in 0u8..=255u8 {
         match (api.audio_mixer_channel_get_info)(mixer_id) {
-            neotron_common_bios::FfiOption::Some(mixer_info) => {
+            bios::FfiOption::Some(mixer_info) => {
                 let dir_str = match mixer_info.direction {
-                    neotron_common_bios::audio::Direction::Input => "In",
-                    neotron_common_bios::audio::Direction::Loopback => "Loop",
-                    neotron_common_bios::audio::Direction::Output => "Out",
+                    bios::audio::Direction::Input => "In",
+                    bios::audio::Direction::Loopback => "Loop",
+                    bios::audio::Direction::Output => "Out",
                 };
                 if selected_mixer
                     .and_then(|s| Some(s == mixer_info.name.as_str()))
@@ -104,7 +104,7 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
                     );
                 }
             }
-            neotron_common_bios::FfiOption::None => {
+            bios::FfiOption::None => {
                 // Run out of mixers
                 break;
             }
@@ -117,7 +117,7 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
     fn play_inner(
         file_name: &str,
         scratch: &mut [u8],
-    ) -> Result<(), embedded_sdmmc::Error<neotron_common_bios::Error>> {
+    ) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
         osprintln!("Loading /{} from Block Device 0", file_name);
         let bios_block = crate::fs::BiosBlock();
         let time = crate::fs::BiosTime();
@@ -142,7 +142,7 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
             let bytes_read = mgr.read(&mut volume, &mut file, &mut buffer)?;
             let mut buffer = &buffer[0..bytes_read];
             while !buffer.is_empty() {
-                let slice = neotron_common_bios::FfiByteSlice::new(buffer);
+                let slice = bios::FfiByteSlice::new(buffer);
                 let played = unsafe { (api.audio_output_data)(slice).unwrap() };
                 buffer = &buffer[played..];
                 delta += played;

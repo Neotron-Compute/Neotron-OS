@@ -376,20 +376,19 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
     }
 
     let api = API.get();
-    if (api.api_version_get)() != neotron_common_bios::API_VERSION {
+    if (api.api_version_get)() != bios::API_VERSION {
         panic!("API mismatch!");
     }
 
     let config = config::Config::load().unwrap_or_default();
 
-    if config.get_vga_console() {
-        // Try and set 80x30 mode for maximum compatibility
-        (api.video_set_mode)(bios::video::Mode::new(
-            bios::video::Timing::T640x480,
-            bios::video::Format::Text8x16,
-        ));
+    if let Some(mut mode) = config.get_vga_console() {
+        // Set the configured mode
+        if let bios::FfiResult::Err(_e) = (api.video_set_mode)(mode) {
+            // Failed to change mode - check what mode we're in
+            mode = (api.video_get_mode)();
+        };
         // Work with whatever we get
-        let mode = (api.video_get_mode)();
         let (width, height) = (mode.text_width(), mode.text_height());
 
         if let (Some(width), Some(height)) = (width, height) {

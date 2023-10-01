@@ -149,9 +149,9 @@ dependencies = [
 
 [[package]]
 name = "neotron-common-bios"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9adad98cd2c761f72321c516359f53b8e0cd56637ee6332e7d8628d8144cad3a"
+checksum = "78126c13b56ba6f62487db499cff62b0761477bd3ab6a1aa13affc03663bc276"
 dependencies = [
  "chrono",
  "neotron-ffi",

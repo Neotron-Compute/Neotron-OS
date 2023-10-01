@@ -1,9 +1,8 @@
 //! Filesystem related types
 
 use chrono::{Datelike, Timelike};
-use neotron_common_bios as bios;
 
-use crate::API;
+use crate::{bios, API};
 
 pub struct BiosBlock();
 

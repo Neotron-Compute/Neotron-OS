@@ -41,7 +41,7 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-neotron-common-bios = "0.11"
+neotron-common-bios = "0.11.1"
 pc-keyboard = "0.7"
 r0 = "1.0"
 heapless = "0.7"
