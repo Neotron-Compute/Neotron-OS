@@ -2,7 +2,12 @@
 
 ## Unreleased changes
 
-* None
+* Can set/set video mode
+* Stores video mode as part of config
+* Removed demo commands (they should be applications)
+* Added raw PCM sound playback
+* Added mixer command
+* Switch to neotron-common-bios 0.11.1
 
 ## v0.5.0
 
