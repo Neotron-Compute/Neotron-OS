@@ -61,8 +61,7 @@ impl From<neotron_loader::Error<embedded_sdmmc::Error<bios::Error>>> for Error {
 /// Something the ELF loader can use to get bytes off the disk
 struct FileSource {
     mgr: core::cell::RefCell<embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>>,
-    volume: embedded_sdmmc::Volume,
-    file: core::cell::RefCell<File>,
+    file: embedded_sdmmc::File,
     buffer: core::cell::RefCell<[u8; Self::BUFFER_LEN]>,
     offset_cached: core::cell::Cell<Option<u32>>,
 }
@@ -70,15 +69,10 @@ struct FileSource {
 impl FileSource {
     const BUFFER_LEN: usize = 128;
 
-    fn new(
-        mgr: embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>,
-        volume: embedded_sdmmc::Volume,
-        file: File,
-    ) -> FileSource {
+    fn new(mgr: embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>, file: File) -> FileSource {
         FileSource {
             mgr: core::cell::RefCell::new(mgr),
-            file: core::cell::RefCell::new(file),
-            volume,
+            file,
             buffer: core::cell::RefCell::new([0u8; 128]),
             offset_cached: core::cell::Cell::new(None),
         }
@@ -90,10 +84,11 @@ impl FileSource {
         out_buffer: &mut [u8],
     ) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
         osprintln!("Reading from {}", offset);
-        self.file.borrow_mut().seek_from_start(offset).unwrap();
         self.mgr
             .borrow_mut()
-            .read(&self.volume, &mut self.file.borrow_mut(), out_buffer)?;
+            .file_seek_from_start(self.file, offset)
+            .unwrap();
+        self.mgr.borrow_mut().read(self.file, out_buffer)?;
         Ok(())
     }
 }
@@ -117,12 +112,13 @@ impl neotron_loader::traits::Source for &FileSource {
             }
 
             osprintln!("Reading from {}", offset);
-            self.file.borrow_mut().seek_from_start(offset).unwrap();
-            self.mgr.borrow_mut().read(
-                &self.volume,
-                &mut self.file.borrow_mut(),
-                self.buffer.borrow_mut().as_mut_slice(),
-            )?;
+            self.mgr
+                .borrow_mut()
+                .file_seek_from_start(self.file, offset)
+                .unwrap();
+            self.mgr
+                .borrow_mut()
+                .read(self.file, self.buffer.borrow_mut().as_mut_slice())?;
             self.offset_cached.set(Some(offset));
             chunk.copy_from_slice(&self.buffer.borrow()[0..chunk.len()]);
 
@@ -209,16 +205,11 @@ impl TransientProgramArea {
         let time = crate::fs::BiosTime();
         let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
         // Open the first partition
-        let mut volume = mgr.get_volume(embedded_sdmmc::VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(&volume)?;
-        let file = mgr.open_file_in_dir(
-            &mut volume,
-            &root_dir,
-            file_name,
-            embedded_sdmmc::Mode::ReadOnly,
-        )?;
+        let volume = mgr.open_volume(embedded_sdmmc::VolumeIdx(0))?;
+        let root_dir = mgr.open_root_dir(volume)?;
+        let file = mgr.open_file_in_dir(root_dir, file_name, embedded_sdmmc::Mode::ReadOnly)?;
 
-        let source = FileSource::new(mgr, volume, file);
+        let source = FileSource::new(mgr, file);
         let loader = neotron_loader::Loader::new(&source)?;
 
         let mut iter = loader.iter_program_headers();
