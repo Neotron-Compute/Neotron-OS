@@ -132,29 +132,53 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
             embedded_sdmmc::Mode::ReadOnly,
         )?;
 
+        osprintln!("Press Q to quit, P to pause/unpause...");
+
         let api = API.get();
 
         let mut buffer = &mut scratch[0..4096];
         let mut bytes = 0;
         let mut delta = 0;
 
-        while !file.eof() {
-            let bytes_read = mgr.read(&mut volume, &mut file, &mut buffer)?;
-            let mut buffer = &buffer[0..bytes_read];
-            while !buffer.is_empty() {
-                let slice = bios::FfiByteSlice::new(buffer);
-                let played = unsafe { (api.audio_output_data)(slice).unwrap() };
-                buffer = &buffer[played..];
-                delta += played;
-                if delta > 48000 {
-                    bytes += delta;
-                    delta = 0;
+        let mut pause = false;
+        'playback: while !file.eof() {
+            if !pause {
+                let bytes_read = mgr.read(&mut volume, &mut file, &mut buffer)?;
+                let mut buffer = &buffer[0..bytes_read];
+                while !buffer.is_empty() {
+                    let slice = bios::FfiByteSlice::new(buffer);
+                    let played = unsafe { (api.audio_output_data)(slice).unwrap() };
+                    buffer = &buffer[played..];
+                    delta += played;
+                    if delta > 48000 {
+                        bytes += delta;
+                        delta = 0;
+                        let milliseconds = bytes / ((48000 / 1000) * 4);
+                        osprint!(
+                            "\rPlayed: {}.{:03} s",
+                            milliseconds / 1000,
+                            milliseconds % 1000
+                        );
+                    }
+                }
+            }
+
+            let mut buffer = [0u8; 16];
+            let count = { crate::STD_INPUT.lock().get_data(&mut buffer) };
+            for b in &buffer[0..count] {
+                if *b == b'q' || *b == b'Q' {
+                    osprintln!("\nQuitting playback!");
+                    break 'playback;
+                } else if (*b == b'p' || *b == b'P') && pause {
+                    pause = false;
+                } else if (*b == b'p' || *b == b'P') && !pause {
                     let milliseconds = bytes / ((48000 / 1000) * 4);
                     osprint!(
-                        "\rPlayed: {}:{} ms",
+                        "\rPaused: {}.{:03} s",
                         milliseconds / 1000,
                         milliseconds % 1000
                     );
+                    pause = true;
                 }
             }
         }
