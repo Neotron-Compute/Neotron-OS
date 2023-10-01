@@ -71,6 +71,17 @@ impl VgaConsole {
         }
     }
 
+    /// Change the video mode
+    ///
+    /// Non text modes are ignored.
+    pub fn change_mode(&mut self, mode: neotron_common_bios::video::Mode) {
+        if let (Some(height), Some(width)) = (mode.text_height(), mode.text_width()) {
+            self.inner.height = height as isize;
+            self.inner.width = width as isize;
+            self.clear();
+        }
+    }
+
     /// Clear the screen.
     ///
     /// Every character on the screen is replaced with an space (U+0020).
