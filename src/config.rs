@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Represents our configuration information that we ask the BIOS to serialise
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    vga_console: bool,
+    vga_console: Option<u8>,
     serial_console: bool,
     serial_baud: u32,
 }
@@ -39,13 +39,13 @@ impl Config {
     }
 
     /// Should this system use the VGA console?
-    pub fn get_vga_console(&self) -> bool {
-        self.vga_console
+    pub fn get_vga_console(&self) -> Option<bios::video::Mode> {
+        self.vga_console.and_then(bios::video::Mode::try_from_u8)
     }
 
     // Set whether this system should use the VGA console.
-    pub fn set_vga_console(&mut self, new_value: bool) {
-        self.vga_console = new_value;
+    pub fn set_vga_console(&mut self, new_value: Option<bios::video::Mode>) {
+        self.vga_console = new_value.map(|m| m.as_u8());
     }
 
     /// Should this system use the UART console?
@@ -82,7 +82,7 @@ impl Config {
 impl core::default::Default for Config {
     fn default() -> Config {
         Config {
-            vga_console: true,
+            vga_console: Some(0),
             serial_console: false,
             serial_baud: 115200,
         }
