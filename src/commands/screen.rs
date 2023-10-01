@@ -1,9 +1,11 @@
 //! Screen-related commands for Neotron OS
 
-use crate::{osprint, osprintln, Ctx};
-use neotron_common_bios::{
-    video::{Format, Mode},
-    ApiResult,
+use crate::{
+    bios::{
+        video::{Format, Mode},
+        ApiResult,
+    },
+    osprint, osprintln, Ctx,
 };
 
 pub static CLS_ITEM: menu::Item<Ctx> = menu::Item {

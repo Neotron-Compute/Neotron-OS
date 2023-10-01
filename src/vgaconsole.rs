@@ -24,7 +24,7 @@
 // Modules and Imports
 // ===========================================================================
 
-use neotron_common_bios::video::{Attr, TextBackgroundColour, TextForegroundColour};
+use crate::bios::video::{Attr, Mode, TextBackgroundColour, TextForegroundColour};
 
 // ===========================================================================
 // Global Variables
@@ -74,7 +74,7 @@ impl VgaConsole {
     /// Change the video mode
     ///
     /// Non text modes are ignored.
-    pub fn change_mode(&mut self, mode: neotron_common_bios::video::Mode) {
+    pub fn change_mode(&mut self, mode: Mode) {
         if let (Some(height), Some(width)) = (mode.text_height(), mode.text_width()) {
             self.inner.height = height as isize;
             self.inner.width = width as isize;
@@ -89,11 +89,6 @@ impl VgaConsole {
         self.inner.cursor_disable();
         self.inner.clear();
         self.inner.cursor_enable();
-    }
-
-    /// Set the default attribute for any future text.
-    pub fn set_attr(&mut self, attr: Attr) {
-        self.inner.set_attr(attr);
     }
 
     /// Write a UTF-8 byte string to the console.
@@ -223,11 +218,6 @@ impl ConsoleInner {
             }
         }
         self.home();
-    }
-
-    /// Set the default attribute for any future text.
-    fn set_attr(&mut self, attr: Attr) {
-        self.attr = attr;
     }
 
     /// Put a glyph at the current position on the screen.
