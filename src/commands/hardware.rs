@@ -114,7 +114,19 @@ fn lshw(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: 
     osprintln!("Audio Mixers:");
     for dev_idx in 0..=255u8 {
         if let bios::FfiOption::Some(device_info) = (api.audio_mixer_channel_get_info)(dev_idx) {
-            osprintln!("  {}: {:?}", dev_idx, device_info);
+            let dir = match device_info.direction {
+                bios::audio::Direction::Input => "In",
+                bios::audio::Direction::Output => "Out",
+                bios::audio::Direction::Loopback => "Loop",
+            };
+            osprintln!(
+                "  {}: {:08} ({}) {}/{}",
+                dev_idx,
+                device_info.name,
+                dir,
+                device_info.current_level,
+                device_info.max_level
+            );
             found = true;
         }
     }
