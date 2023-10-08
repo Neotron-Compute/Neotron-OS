@@ -1,6 +1,6 @@
 [package]
 name = "neotron-os"
-version = "0.5.0"
+version = "0.6.0"
 authors = [
     "Jonathan 'theJPster' Pallant <github@thejpster.org.uk>",
     "The Neotron Developers"
@@ -41,7 +41,7 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-neotron-common-bios = "0.11"
+neotron-common-bios = "0.11.1"
 pc-keyboard = "0.7"
 r0 = "1.0"
 heapless = "0.7"
@@ -52,7 +52,7 @@ chrono = { version = "0.4", default-features = false }
 embedded-sdmmc = { version = "0.5", default-features = false }
 neotron-api = "0.1"
 neotron-loader = "0.1"
-vte = { git = "https://github.com/alacritty/vte", commit="94e74f3a64f42d5dad4e3d42dbe8c23291038214" }
+vte = "0.12"
 
 [features]
 lib-mode = []

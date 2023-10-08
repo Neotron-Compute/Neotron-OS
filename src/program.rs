@@ -3,6 +3,7 @@
 use embedded_sdmmc::File;
 
 use crate::{
+    bios,
     fs::{BiosBlock, BiosTime},
     osprint, osprintln,
 };
@@ -38,23 +39,21 @@ pub enum Error {
     /// The file was too large for RAM.
     ProgramTooLarge,
     /// A filesystem error occurred
-    Filesystem(embedded_sdmmc::Error<neotron_common_bios::Error>),
+    Filesystem(embedded_sdmmc::Error<bios::Error>),
     /// An ELF error occurred
-    Elf(neotron_loader::Error<embedded_sdmmc::Error<neotron_common_bios::Error>>),
+    Elf(neotron_loader::Error<embedded_sdmmc::Error<bios::Error>>),
     /// Tried to run when nothing was loaded
     NothingLoaded,
 }
 
-impl From<embedded_sdmmc::Error<neotron_common_bios::Error>> for Error {
-    fn from(value: embedded_sdmmc::Error<neotron_common_bios::Error>) -> Self {
+impl From<embedded_sdmmc::Error<bios::Error>> for Error {
+    fn from(value: embedded_sdmmc::Error<bios::Error>) -> Self {
         Error::Filesystem(value)
     }
 }
 
-impl From<neotron_loader::Error<embedded_sdmmc::Error<neotron_common_bios::Error>>> for Error {
-    fn from(
-        value: neotron_loader::Error<embedded_sdmmc::Error<neotron_common_bios::Error>>,
-    ) -> Self {
+impl From<neotron_loader::Error<embedded_sdmmc::Error<bios::Error>>> for Error {
+    fn from(value: neotron_loader::Error<embedded_sdmmc::Error<bios::Error>>) -> Self {
         Error::Elf(value)
     }
 }
@@ -89,7 +88,7 @@ impl FileSource {
         &self,
         offset: u32,
         out_buffer: &mut [u8],
-    ) -> Result<(), embedded_sdmmc::Error<neotron_common_bios::Error>> {
+    ) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
         osprintln!("Reading from {}", offset);
         self.file.borrow_mut().seek_from_start(offset).unwrap();
         self.mgr
@@ -100,7 +99,7 @@ impl FileSource {
 }
 
 impl neotron_loader::traits::Source for &FileSource {
-    type Error = embedded_sdmmc::Error<neotron_common_bios::Error>;
+    type Error = embedded_sdmmc::Error<bios::Error>;
 
     fn read(&self, mut offset: u32, out_buffer: &mut [u8]) -> Result<(), Self::Error> {
         for chunk in out_buffer.chunks_mut(FileSource::BUFFER_LEN) {
@@ -325,7 +324,8 @@ extern "C" fn api_write(
         }
         let mut guard = crate::SERIAL_CONSOLE.lock();
         if let Some(console) = guard.as_mut() {
-            console.write_bstr(buffer.as_slice());
+            // Ignore serial errors on stdout
+            let _ = console.write_bstr(buffer.as_slice());
         }
         neotron_api::Result::Ok(())
     } else {

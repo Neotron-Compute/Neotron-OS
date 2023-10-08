@@ -1,152 +1,118 @@
 //! Screen-related commands for Neotron OS
 
-use neotron_common_bios::video::{Attr, TextBackgroundColour, TextForegroundColour};
+use crate::{
+    bios::{
+        video::{Format, Mode},
+        ApiResult,
+    },
+    osprint, osprintln, Ctx,
+};
 
-use crate::{osprint, osprintln, Ctx, API, VGA_CONSOLE};
-
-pub static CLEAR_ITEM: menu::Item<Ctx> = menu::Item {
+pub static CLS_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
-        function: clear,
+        function: cls_cmd,
         parameters: &[],
     },
-    command: "screen_clear",
+    command: "cls",
     help: Some("Clear the screen"),
 };
 
-pub static FILL_ITEM: menu::Item<Ctx> = menu::Item {
+pub static MODE_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
-        function: fill,
-        parameters: &[],
+        function: mode_cmd,
+        parameters: &[menu::Parameter::Optional {
+            parameter_name: "new_mode",
+            help: Some("The new text mode to change to"),
+        }],
     },
-    command: "screen_fill",
-    help: Some("Fill the screen with characters"),
+    command: "mode",
+    help: Some("List possible video modes"),
 };
 
-pub static BENCH_ITEM: menu::Item<Ctx> = menu::Item {
-    item_type: menu::ItemType::Callback {
-        function: bench,
-        parameters: &[],
-    },
-    command: "screen_bench",
-    help: Some("Time how long to put 1,000,000 characters on the screen, with scrolling."),
-};
-
-pub static MANDEL_ITEM: menu::Item<Ctx> = menu::Item {
-    item_type: menu::ItemType::Callback {
-        function: mandel,
-        parameters: &[],
-    },
-    command: "screen_mandel",
-    help: Some("Calculate the Mandelbrot set"),
-};
-
-/// Called when the "clear" command is executed.
-fn clear(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    let mut guard = VGA_CONSOLE.try_lock().unwrap();
-    if let Some(vga_console) = guard.as_mut() {
-        vga_console.clear();
-    }
+/// Called when the "cls" command is executed.
+fn cls_cmd(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
+    // Reset SGR, go home, clear screen,
+    osprint!("\u{001b}[0m\u{001b}[1;1H\u{001b}[2J");
 }
 
-/// Called when the "fill" command is executed.
-fn fill(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    let mut guard = VGA_CONSOLE.try_lock().unwrap();
-    if let Some(console) = guard.as_mut() {
-        console.clear();
-        let api = API.get();
-        let mode = (api.video_get_mode)();
-        let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
-            osprintln!("Unable to get console size");
+/// Called when the "mode" command is executed
+fn mode_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &mut Ctx) {
+    if let Some(new_mode) = menu::argument_finder(item, args, "new_mode").unwrap() {
+        let Ok(mode_num) = new_mode.parse::<u8>() else {
+            osprintln!("Invalid integer {:?}", new_mode);
             return;
         };
-        // A range of printable ASCII compatible characters
-        let mut char_cycle = (b' '..=b'~').cycle();
-        let mut remaining = height * width;
-
-        // Scroll two screen fulls
-        'outer: for bg in (0..=7).cycle() {
-            let bg_colour = TextBackgroundColour::new(bg).unwrap();
-            for fg in 1..=15 {
-                if fg == bg {
-                    continue;
-                }
-                let fg_colour = TextForegroundColour::new(fg).unwrap();
-                remaining -= 1;
-                if remaining == 0 {
-                    break 'outer;
-                }
-                let attr = Attr::new(fg_colour, bg_colour, false);
-                let glyph = char_cycle.next().unwrap();
-                console.set_attr(attr);
-                console.write_bstr(&[glyph]);
+        let Some(mode) = Mode::try_from_u8(mode_num) else {
+            osprintln!("Invalid mode {:?}", new_mode);
+            return;
+        };
+        let has_vga = {
+            let mut guard = crate::VGA_CONSOLE.lock();
+            guard.as_mut().is_some()
+        };
+        if !has_vga {
+            osprintln!("No VGA console.");
+            return;
+        }
+        let api = crate::API.get();
+        match mode.format() {
+            Format::Text8x16 => {}
+            Format::Text8x8 => {}
+            _ => {
+                osprintln!("Not a text mode?");
+                return;
             }
         }
-        let attr = Attr::new(
-            TextForegroundColour::WHITE,
-            TextBackgroundColour::BLACK,
-            false,
-        );
-        console.set_attr(attr);
-    }
-}
-
-/// Called when the "bench" command is executed.
-fn bench(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    const NUM_CHARS: u64 = 1_000_000;
-    let mut guard = VGA_CONSOLE.try_lock().unwrap();
-    if let Some(console) = guard.as_mut() {
-        let api = API.get();
-        let start = (api.time_ticks_get)();
-        console.clear();
-        let glyphs = &[b'x'];
-        for _idx in 0..NUM_CHARS {
-            console.write_bstr(glyphs);
-        }
-        let end = (api.time_ticks_get)();
-        let delta = end.0 - start.0;
-        let chars_per_second = (NUM_CHARS * (api.time_ticks_per_second)().0) / delta;
-        osprintln!(
-            "{} chars in {} ticks, or {} chars per second",
-            NUM_CHARS,
-            delta,
-            chars_per_second
-        );
-    }
-}
-
-/// Called when the "mandel" command is executed.
-fn mandel(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    fn mandelbrot(cx: f64, cy: f64, max_loops: u32) -> u32 {
-        let mut x = cx;
-        let mut y = cy;
-        for i in 1..max_loops {
-            let x_squared = x * x;
-            let y_squared = y * y;
-            if x_squared + y_squared > 4.0 {
-                return i;
+        match (api.video_set_mode)(mode) {
+            ApiResult::Ok(_) => {
+                let mut guard = crate::VGA_CONSOLE.lock();
+                if let Some(console) = guard.as_mut() {
+                    console.change_mode(mode);
+                }
+                osprintln!("Now in mode {}", mode.as_u8());
             }
-            let x1 = x_squared - y_squared + cx;
-            let y1 = (2.0 * x * y) + cy;
-            x = x1;
-            y = y1;
+            ApiResult::Err(e) => {
+                osprintln!("Failed to change mode: {:?}", e);
+            }
         }
-        0
-    }
-
-    let api = API.get();
-    let mode = (api.video_get_mode)();
-    let (Some(width), Some(height)) = (mode.text_width(), mode.text_height()) else {
-        osprintln!("Unable to get screen size");
-        return;
-    };
-
-    let glyphs = b" .,'~!^:;[/<&?oxOX#  ";
-    for y_pos in 0..height - 2 {
-        let y = (f64::from(y_pos) * 4.0 / f64::from(height)) - 2.0;
-        for x_pos in 0..width {
-            let x = (f64::from(x_pos) * 4.0 / f64::from(width)) - 2.0;
-            let result = mandelbrot(x, y, 20);
-            osprint!("{}", glyphs[result as usize] as char);
-        }
+    } else {
+        print_modes();
     }
 }
+
+/// Print out all supported video modes
+fn print_modes() {
+    let api = crate::API.get();
+    let current_mode = (api.video_get_mode)();
+    let mut any_mode = false;
+    for mode_no in 0..255 {
+        // Note (unsafe): we'll test if it's right before we try and use it
+        let Some(m) = Mode::try_from_u8(mode_no) else {
+            continue;
+        };
+        let is_supported = (api.video_is_valid_mode)(m);
+        if is_supported {
+            any_mode = true;
+            let is_current = if current_mode == m { "*" } else { " " };
+            let text_rows = m.text_height();
+            let text_cols = m.text_width();
+            let f = m.format();
+            let width = m.horizontal_pixels();
+            let height = m.vertical_lines();
+            let hz = m.frame_rate_hz();
+            if let (Some(text_rows), Some(text_cols)) = (text_rows, text_cols) {
+                // It's a text mode
+                osprintln!("{mode_no:3}{is_current}: {width} x {height} @ {hz} Hz {f} ({text_cols} x {text_rows})");
+            } else {
+                // It's a framebuffer mode
+                let f = m.format();
+                osprintln!("{mode_no:3}{is_current}: {width} x {height} @ {hz} Hz {f}");
+            }
+        }
+    }
+    if !any_mode {
+        osprintln!("No valid modes found");
+    }
+}
+
+// End of file

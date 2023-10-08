@@ -149,9 +149,9 @@ dependencies = [
 
 [[package]]
 name = "neotron-common-bios"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9adad98cd2c761f72321c516359f53b8e0cd56637ee6332e7d8628d8144cad3a"
+checksum = "78126c13b56ba6f62487db499cff62b0761477bd3ab6a1aa13affc03663bc276"
 dependencies = [
  "chrono",
  "neotron-ffi",
@@ -172,7 +172,7 @@ checksum = "b9b8634a088b9d5b338a96b3f6ef45a3bc0b9c0f0d562c7d00e498265fd96e8f"
 
 [[package]]
 name = "neotron-os"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "chrono",
  "embedded-sdmmc",
@@ -314,7 +314,8 @@ checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
 [[package]]
 name = "utf8parse"
 version = "0.2.1"
-source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "void"
@@ -324,8 +325,9 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 
 [[package]]
 name = "vte"
-version = "0.11.1"
-source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "401dc1020e10f74d38616c1f1ab92ccd85dc902705a29d0730e0fbea8534f91a"
 dependencies = [
  "arrayvec",
  "utf8parse",
@@ -335,7 +337,8 @@ dependencies = [
 [[package]]
 name = "vte_generate_state_changes"
 version = "0.1.1"
-source = "git+https://github.com/alacritty/vte#94e74f3a64f42d5dad4e3d42dbe8c23291038214"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d257817081c7dffcdbab24b9e62d2def62e2ff7d00b1c20062551e6cccc145ff"
 dependencies = [
  "proc-macro2",
  "quote",

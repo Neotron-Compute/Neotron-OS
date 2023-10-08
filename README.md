@@ -13,7 +13,7 @@ This OS is a work in progress. We intend to support:
 * [x] Running built-in commands from a shell
 * [x] Executing applications from RAM
   * [x] Applications can print to stdout
-  * [ ] Applications can read from stdin
+  * [x] Applications can read from stdin
   * [ ] Applications can open/close/read/write files
 * [x] MBR/FAT32 formatted block devices
   * [x] Read blocks
@@ -22,9 +22,9 @@ This OS is a work in progress. We intend to support:
   * [ ] Delete files
   * [ ] Change directory
 * [x] Load ELF binaries from disk
-* [ ] Changing text modes
+* [x] Changing text modes
 * [ ] Basic networking
-* [ ] Music playback
+* [x] Music playback
 * [ ] Various keyboard layouts
 * [ ] Ethernet / WiFi networking
 * [ ] Built-in scripting language
