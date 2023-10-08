@@ -1,6 +1,6 @@
 [package]
 name = "neotron-os"
-version = "0.5.0"
+version = "0.6.0"
 authors = [
     "Jonathan 'theJPster' Pallant <github@thejpster.org.uk>",
     "The Neotron Developers"

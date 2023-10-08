@@ -13,7 +13,7 @@ for TARGET_ARCH in thumbv6m-none-eabi thumbv7m-none-eabi thumbv7em-none-eabi; do
     echo "BINARY is ${BINARY}"
     cargo build $* --release --target=${TARGET_ARCH} --bin ${BINARY}
     # objcopy would do the build for us first, but it doesn't have good build output
-    cargo objcopy $* --release --target=${TARGET_ARCH} --bin ${BINARY} -- -O binary ${RELEASE_DIR}/${TARGET_ARCH}-${BINARY}-libneotron_os.bin
+    rust-objcopy -O binary ./target/${TARGET_ARCH}/release/${BINARY} ${RELEASE_DIR}/${TARGET_ARCH}-${BINARY}-libneotron_os.bin
     # Keep the ELF file too (for debugging)
     cp ./target/${TARGET_ARCH}/release/${BINARY} ${RELEASE_DIR}/${TARGET_ARCH}-${BINARY}-libneotron_os.elf
   done
