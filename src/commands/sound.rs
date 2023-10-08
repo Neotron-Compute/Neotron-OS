@@ -47,6 +47,8 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
         None
     };
 
+    let mixer_int = selected_mixer.and_then(|n| n.parse::<u8>().ok());
+
     let api = API.get();
 
     if let (Some(selected_mixer), Some(level_int)) = (selected_mixer, level_int) {
@@ -54,7 +56,8 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
         for mixer_id in 0u8..=255u8 {
             match (api.audio_mixer_channel_get_info)(mixer_id) {
                 bios::FfiOption::Some(mixer_info) => {
-                    if mixer_info.name.as_str() == selected_mixer {
+                    if (Some(mixer_id) == mixer_int) || (mixer_info.name.as_str() == selected_mixer)
+                    {
                         if let Err(e) =
                             (api.audio_mixer_channel_set_level)(mixer_id, level_int).into()
                         {
@@ -90,9 +93,10 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
                     bios::audio::Direction::Loopback => "Loop",
                     bios::audio::Direction::Output => "Out",
                 };
-                if selected_mixer
-                    .and_then(|s| Some(s == mixer_info.name.as_str()))
-                    .unwrap_or(true)
+                if (Some(mixer_id) == mixer_int)
+                    || selected_mixer
+                        .map(|s| s == mixer_info.name.as_str())
+                        .unwrap_or(true)
                 {
                     osprintln!(
                         "#{}: {} ({}) {}/{}",
@@ -136,14 +140,14 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
 
         let api = API.get();
 
-        let mut buffer = &mut scratch[0..4096];
+        let buffer = &mut scratch[0..4096];
         let mut bytes = 0;
         let mut delta = 0;
 
         let mut pause = false;
         'playback: while !file.eof() {
             if !pause {
-                let bytes_read = mgr.read(&mut volume, &mut file, &mut buffer)?;
+                let bytes_read = mgr.read(&volume, &mut file, buffer)?;
                 let mut buffer = &buffer[0..bytes_read];
                 while !buffer.is_empty() {
                     let slice = bios::FfiByteSlice::new(buffer);
