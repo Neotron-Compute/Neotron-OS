@@ -49,7 +49,7 @@ postcard = "1.0"
 serde = { version = "1.0", default-features = false }
 menu = "0.3"
 chrono = { version = "0.4", default-features = false }
-embedded-sdmmc = { git = "https://github.com/rust-embedded-community/embedded-sdmmc-rs", default-features = false }
+embedded-sdmmc = { version = "0.6", default-features = false }
 neotron-api = "0.1"
 neotron-loader = "0.1"
 vte = "0.12"
