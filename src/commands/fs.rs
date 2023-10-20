@@ -33,11 +33,11 @@ fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &
         let time = crate::fs::BiosTime();
         let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
         // Open the first partition
-        let volume = mgr.get_volume(VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(&volume)?;
+        let volume = mgr.open_volume(VolumeIdx(0))?;
+        let root_dir = mgr.open_root_dir(volume)?;
         let mut total_bytes = 0u64;
         let mut num_files = 0;
-        mgr.iterate_dir(&volume, &root_dir, |dir_entry| {
+        mgr.iterate_dir(root_dir, |dir_entry| {
             let padding = 8 - dir_entry.name.base_name().len();
             for b in dir_entry.name.base_name() {
                 let ch = *b as char;
