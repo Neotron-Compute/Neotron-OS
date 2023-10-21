@@ -27,6 +27,7 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         &ram::RUN_ITEM,
         &ram::LOAD_ITEM,
         &fs::LOAD_ITEM,
+        &fs::TYPE_ITEM,
         &screen::CLS_ITEM,
         &screen::MODE_ITEM,
         &input::KBTEST_ITEM,
