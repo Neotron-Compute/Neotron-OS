@@ -99,7 +99,7 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
                         .unwrap_or(true)
                 {
                     osprintln!(
-                        "#{}: {} ({}) {}/{}",
+                        "\t{}: {} ({}) {}/{}",
                         mixer_id,
                         mixer_info.name,
                         dir_str,
@@ -190,3 +190,5 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
         osprintln!("\nError during playback: {:?}", e);
     }
 }
+
+// End of file

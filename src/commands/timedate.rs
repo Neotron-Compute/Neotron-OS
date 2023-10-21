@@ -41,3 +41,5 @@ fn date(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &m
         time.nanosecond()
     );
 }
+
+// End of file

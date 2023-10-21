@@ -325,6 +325,9 @@ impl StdInput {
 pub struct Ctx {
     config: config::Config,
     tpa: program::TransientProgramArea,
+    /// This flag is set if the "run" command is entered. It tells us
+    /// to take our input bytes from the TPA.
+    exec_tpa: Option<usize>,
 }
 
 impl core::fmt::Write for Ctx {
@@ -441,6 +444,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
             // We have to trust the values given to us by the BIOS. If it lies, we will crash.
             program::TransientProgramArea::new(tpa_start, tpa_size)
         },
+        exec_tpa: None,
     };
 
     osprintln!(
@@ -460,6 +464,35 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
         let count = { STD_INPUT.lock().get_data(&mut buffer) };
         for b in &buffer[0..count] {
             menu.input_byte(*b);
+        }
+        // TODO: Consider recursively executing scripts, so that scripts can
+        // call scripts.
+        if let Some(n) = menu.context.exec_tpa {
+            menu.context.exec_tpa = None;
+            let ptr = menu.context.tpa.steal_top(n);
+            osprintln!("\rExecuting TPA...");
+            let mut has_chars = false;
+            let slice = unsafe { core::slice::from_raw_parts(ptr, n) };
+            // TODO: Give the user some way to break out of the loop.
+            for b in slice {
+                // Files contain `\n` or `\r\n` line endings.
+                // menu wants `\r` line endings.
+                if *b == b'\n' {
+                    if has_chars {
+                        // Execute this line
+                        menu.input_byte(b'\r');
+                        has_chars = false;
+                    }
+                } else if *b == b'\r' {
+                    // Drop carriage returns
+                } else {
+                    menu.input_byte(*b);
+                    has_chars = true;
+                }
+            }
+            unsafe {
+                menu.context.tpa.restore_top(n);
+            }
         }
         (api.power_idle)();
     }

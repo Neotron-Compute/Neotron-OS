@@ -2,7 +2,10 @@
 
 ## Unreleased changes
 
-* None
+* Add `i2c` command.
+* Support printing `\t`, with 8 character tab-stops
+* Add `type` command to print files
+* Add `exec` command to execute scripts containing commands
 
 ## v0.6.0  (2023-10-08, [Github Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.6.0))
 

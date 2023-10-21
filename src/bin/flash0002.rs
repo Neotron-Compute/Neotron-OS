@@ -14,3 +14,5 @@
 #[link_section = ".entry_point"]
 #[used]
 pub static ENTRY_POINT_ADDR: extern "C" fn(&neotron_common_bios::Api) -> ! = neotron_os::os_main;
+
+// End of file
