@@ -199,12 +199,11 @@ impl ConsoleInner {
     /// We defer this so you can write the last char on the last line without
     /// causing it to scroll pre-emptively.
     fn scroll_as_required(&mut self) {
-        assert!(self.row <= self.height);
-        if self.col >= self.width {
-            self.col = 0;
+        while self.col >= self.width {
+            self.col -= self.width;
             self.row += 1;
         }
-        if self.row == self.height {
+        while self.row >= self.height {
             self.row -= 1;
             self.scroll_page();
         }
@@ -506,6 +505,9 @@ impl vte::Perform for ConsoleInner {
             }
             b'\r' => {
                 self.col = 0;
+            }
+            b'\t' => {
+                self.col = (self.col + 8) & !7;
             }
             b'\n' => {
                 self.col = 0;
