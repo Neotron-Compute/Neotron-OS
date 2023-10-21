@@ -1,8 +1,12 @@
 # Change Log
 
-## Unreleased changes ([Source](https://github.com/neotron-compute/neotron-os/tree/develop) | [Changes](https://github.com/neotron-compute/neotron-os/compare/v0.7.0...develop))
+## Unreleased changes ([Source](https://github.com/neotron-compute/neotron-os/tree/develop) | [Changes](https://github.com/neotron-compute/neotron-os/compare/v0.7.1...develop))
 
 * None
+
+## v0.7.1 - 2023-10-21 ([Source](https://github.com/neotron-compute/neotron-os/tree/v0.7.1) | [Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.7.1))
+
+* Update `Cargo.lock` so build string no longer shows build as *dirty*
 
 ## v0.7.0 - 2023-10-21 ([Source](https://github.com/neotron-compute/neotron-os/tree/v0.7.0) | [Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.7.0))
 
