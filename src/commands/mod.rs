@@ -24,6 +24,7 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
         &hardware::LSI2C_ITEM,
         &hardware::LSMEM_ITEM,
         &hardware::LSUART_ITEM,
+        &hardware::I2C_ITEM,
         &block::READ_ITEM,
         &fs::DIR_ITEM,
         &ram::HEXDUMP_ITEM,
