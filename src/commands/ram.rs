@@ -1,5 +1,6 @@
 //! Raw RAM read/write related commands for Neotron OS
 
+use super::parse_usize;
 use crate::{osprint, osprintln, Ctx};
 
 pub static HEXDUMP_ITEM: menu::Item<Ctx> = menu::Item {
@@ -46,16 +47,6 @@ pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
     command: "loadf",
     help: Some("Copy a program from ROM/RAM into the application area"),
 };
-
-fn parse_usize(input: &str) -> Result<usize, core::num::ParseIntError> {
-    if let Some(digits) = input.strip_prefix("0x") {
-        // Parse as hex
-        usize::from_str_radix(digits, 16)
-    } else {
-        // Parse as decimal
-        input.parse::<usize>()
-    }
-}
 
 /// Called when the "hexdump" command is executed.
 ///
@@ -146,3 +137,5 @@ fn loadf(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &
         }
     }
 }
+
+// End of file

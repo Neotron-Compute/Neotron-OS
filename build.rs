@@ -31,3 +31,5 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=msvcrt");
     }
 }
+
+// End of file

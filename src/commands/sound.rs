@@ -99,7 +99,7 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
                         .unwrap_or(true)
                 {
                     osprintln!(
-                        "#{}: {} ({}) {}/{}",
+                        "\t{}: {} ({}) {}/{}",
                         mixer_id,
                         mixer_info.name,
                         dir_str,
@@ -127,14 +127,9 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
         let time = crate::fs::BiosTime();
         let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
         // Open the first partition
-        let mut volume = mgr.get_volume(embedded_sdmmc::VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(&volume)?;
-        let mut file = mgr.open_file_in_dir(
-            &mut volume,
-            &root_dir,
-            file_name,
-            embedded_sdmmc::Mode::ReadOnly,
-        )?;
+        let volume = mgr.open_volume(embedded_sdmmc::VolumeIdx(0))?;
+        let root_dir = mgr.open_root_dir(volume)?;
+        let file = mgr.open_file_in_dir(root_dir, file_name, embedded_sdmmc::Mode::ReadOnly)?;
 
         osprintln!("Press Q to quit, P to pause/unpause...");
 
@@ -145,9 +140,10 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
         let mut delta = 0;
 
         let mut pause = false;
-        'playback: while !file.eof() {
+
+        'playback: while !mgr.file_eof(file).unwrap() {
             if !pause {
-                let bytes_read = mgr.read(&volume, &mut file, buffer)?;
+                let bytes_read = mgr.read(file, buffer)?;
                 let mut buffer = &buffer[0..bytes_read];
                 while !buffer.is_empty() {
                     let slice = bios::FfiByteSlice::new(buffer);
@@ -194,3 +190,5 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
         osprintln!("\nError during playback: {:?}", e);
     }
 }
+
+// End of file

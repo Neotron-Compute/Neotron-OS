@@ -106,3 +106,5 @@ fn command(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx:
         }
     }
 }
+
+// End of file

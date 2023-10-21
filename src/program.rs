@@ -61,8 +61,7 @@ impl From<neotron_loader::Error<embedded_sdmmc::Error<bios::Error>>> for Error {
 /// Something the ELF loader can use to get bytes off the disk
 struct FileSource {
     mgr: core::cell::RefCell<embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>>,
-    volume: embedded_sdmmc::Volume,
-    file: core::cell::RefCell<File>,
+    file: embedded_sdmmc::File,
     buffer: core::cell::RefCell<[u8; Self::BUFFER_LEN]>,
     offset_cached: core::cell::Cell<Option<u32>>,
 }
@@ -70,15 +69,10 @@ struct FileSource {
 impl FileSource {
     const BUFFER_LEN: usize = 128;
 
-    fn new(
-        mgr: embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>,
-        volume: embedded_sdmmc::Volume,
-        file: File,
-    ) -> FileSource {
+    fn new(mgr: embedded_sdmmc::VolumeManager<BiosBlock, BiosTime>, file: File) -> FileSource {
         FileSource {
             mgr: core::cell::RefCell::new(mgr),
-            file: core::cell::RefCell::new(file),
-            volume,
+            file,
             buffer: core::cell::RefCell::new([0u8; 128]),
             offset_cached: core::cell::Cell::new(None),
         }
@@ -90,10 +84,11 @@ impl FileSource {
         out_buffer: &mut [u8],
     ) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
         osprintln!("Reading from {}", offset);
-        self.file.borrow_mut().seek_from_start(offset).unwrap();
         self.mgr
             .borrow_mut()
-            .read(&self.volume, &mut self.file.borrow_mut(), out_buffer)?;
+            .file_seek_from_start(self.file, offset)
+            .unwrap();
+        self.mgr.borrow_mut().read(self.file, out_buffer)?;
         Ok(())
     }
 }
@@ -117,12 +112,13 @@ impl neotron_loader::traits::Source for &FileSource {
             }
 
             osprintln!("Reading from {}", offset);
-            self.file.borrow_mut().seek_from_start(offset).unwrap();
-            self.mgr.borrow_mut().read(
-                &self.volume,
-                &mut self.file.borrow_mut(),
-                self.buffer.borrow_mut().as_mut_slice(),
-            )?;
+            self.mgr
+                .borrow_mut()
+                .file_seek_from_start(self.file, offset)
+                .unwrap();
+            self.mgr
+                .borrow_mut()
+                .read(self.file, self.buffer.borrow_mut().as_mut_slice())?;
             self.offset_cached.set(Some(offset));
             chunk.copy_from_slice(&self.buffer.borrow()[0..chunk.len()]);
 
@@ -181,12 +177,7 @@ impl TransientProgramArea {
 
     /// Borrow the TPA region as a slice of words
     pub fn as_slice_u32(&mut self) -> &mut [u32] {
-        unsafe {
-            core::slice::from_raw_parts_mut(
-                self.memory_bottom,
-                self.memory_top.offset_from(self.memory_bottom) as usize,
-            )
-        }
+        unsafe { core::slice::from_raw_parts_mut(self.memory_bottom, self.size_words()) }
     }
 
     /// Borrow the TPA region as a slice of bytes
@@ -194,10 +185,14 @@ impl TransientProgramArea {
         unsafe {
             core::slice::from_raw_parts_mut(
                 self.memory_bottom as *mut u8,
-                (self.memory_top.offset_from(self.memory_bottom) as usize)
-                    * core::mem::size_of::<u32>(),
+                self.size_words() * core::mem::size_of::<u32>(),
             )
         }
+    }
+
+    /// Size of the TPA in 32-bit words
+    fn size_words(&self) -> usize {
+        unsafe { self.memory_top.offset_from(self.memory_bottom) as usize }
     }
 
     /// Loads a program from disk into the Transient Program Area.
@@ -209,16 +204,11 @@ impl TransientProgramArea {
         let time = crate::fs::BiosTime();
         let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
         // Open the first partition
-        let mut volume = mgr.get_volume(embedded_sdmmc::VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(&volume)?;
-        let file = mgr.open_file_in_dir(
-            &mut volume,
-            &root_dir,
-            file_name,
-            embedded_sdmmc::Mode::ReadOnly,
-        )?;
+        let volume = mgr.open_volume(embedded_sdmmc::VolumeIdx(0))?;
+        let root_dir = mgr.open_root_dir(volume)?;
+        let file = mgr.open_file_in_dir(root_dir, file_name, embedded_sdmmc::Mode::ReadOnly)?;
 
-        let source = FileSource::new(mgr, volume, file);
+        let source = FileSource::new(mgr, file);
         let loader = neotron_loader::Loader::new(&source)?;
 
         let mut iter = loader.iter_program_headers();
@@ -278,6 +268,38 @@ impl TransientProgramArea {
 
         self.last_entry = 0;
         Ok(result)
+    }
+
+    /// Move data to the top of TPA and make TPA shorter.
+    ///
+    /// Moves `size` bytes to the top of the TPA, and then pretends the TPA is
+    /// `size` bytes shorter than it was.
+    ///
+    /// `size` will be rounded up to a multiple of 4.
+    ///
+    /// Panics if `n` is too big to fit in the TPA.
+    ///
+    /// Returns a pointer to the data that now sits outside of the TPA. There
+    /// will be `size` bytes at this address but you must manage the lifetimes
+    /// yourself.
+    pub fn steal_top(&mut self, size: usize) -> *const u8 {
+        let stolen_words = (size + 3) / 4;
+        if stolen_words >= self.size_words() {
+            panic!("Stole too much from TPA!");
+        }
+        unsafe {
+            // Top goes down to free memory above it
+            let new_top = self.memory_top.sub(stolen_words);
+            // Copy the data from the bottom to above the newly reduced TPA
+            core::ptr::copy(self.memory_bottom, new_top, stolen_words);
+            new_top as *mut u8
+        }
+    }
+
+    /// Restore the TPA back where it was.
+    pub unsafe fn restore_top(&mut self, size: usize) {
+        let restored_words = (size + 3) / 4;
+        self.memory_top = self.memory_top.add(restored_words);
     }
 }
 
