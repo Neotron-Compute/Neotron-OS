@@ -19,10 +19,13 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
     items: &[
         &timedate::DATE_ITEM,
         &config::COMMAND_ITEM,
-        &block::LSBLK_ITEM,
+        &hardware::LSBLK_ITEM,
+        &hardware::LSBUS_ITEM,
+        &hardware::LSI2C_ITEM,
+        &hardware::LSMEM_ITEM,
+        &hardware::LSUART_ITEM,
         &block::READ_ITEM,
         &fs::DIR_ITEM,
-        &hardware::LSHW_ITEM,
         &ram::HEXDUMP_ITEM,
         &ram::RUN_ITEM,
         &ram::LOAD_ITEM,
@@ -39,3 +42,44 @@ pub static OS_MENU: menu::Menu<Ctx> = menu::Menu {
     entry: None,
     exit: None,
 };
+
+/// Parse a string into a `usize`
+///
+/// Numbers like `0x123` are hex. Numbers like `123` are decimal.
+fn parse_usize(input: &str) -> Result<usize, core::num::ParseIntError> {
+    if let Some(digits) = input.strip_prefix("0x") {
+        // Parse as hex
+        usize::from_str_radix(digits, 16)
+    } else {
+        // Parse as decimal
+        input.parse::<usize>()
+    }
+}
+
+/// Parse a string into a `u8`
+///
+/// Numbers like `0x123` are hex. Numbers like `123` are decimal.
+fn parse_u8(input: &str) -> Result<u8, core::num::ParseIntError> {
+    if let Some(digits) = input.strip_prefix("0x") {
+        // Parse as hex
+        u8::from_str_radix(digits, 16)
+    } else {
+        // Parse as decimal
+        input.parse::<u8>()
+    }
+}
+
+/// Parse a string into a `u64`
+///
+/// Numbers like `0x123` are hex. Numbers like `123` are decimal.
+fn parse_u64(input: &str) -> Result<u64, core::num::ParseIntError> {
+    if let Some(digits) = input.strip_prefix("0x") {
+        // Parse as hex
+        u64::from_str_radix(digits, 16)
+    } else {
+        // Parse as decimal
+        input.parse::<u64>()
+    }
+}
+
+// End of file
