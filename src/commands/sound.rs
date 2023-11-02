@@ -88,10 +88,11 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
     for mixer_id in 0u8..=255u8 {
         match (api.audio_mixer_channel_get_info)(mixer_id) {
             bios::FfiOption::Some(mixer_info) => {
-                let dir_str = match mixer_info.direction {
-                    bios::audio::Direction::Input => "In",
-                    bios::audio::Direction::Loopback => "Loop",
-                    bios::audio::Direction::Output => "Out",
+                let dir_str = match mixer_info.direction.make_safe() {
+                    Ok(bios::audio::Direction::Input) => "In",
+                    Ok(bios::audio::Direction::Loopback) => "Loop",
+                    Ok(bios::audio::Direction::Output) => "Out",
+                    _ => "??",
                 };
                 if (Some(mixer_id) == mixer_int)
                     || selected_mixer

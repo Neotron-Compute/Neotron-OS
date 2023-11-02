@@ -47,8 +47,8 @@ pub struct VgaConsole {
 impl VgaConsole {
     /// White on Black
     const DEFAULT_ATTR: Attr = Attr::new(
-        TextForegroundColour::LIGHT_GRAY,
-        TextBackgroundColour::BLACK,
+        TextForegroundColour::LightGray,
+        TextBackgroundColour::Black,
         false,
     );
 
@@ -127,8 +127,8 @@ struct ConsoleInner {
 
 impl ConsoleInner {
     const DEFAULT_ATTR: Attr = Attr::new(
-        TextForegroundColour::LIGHT_GRAY,
-        TextBackgroundColour::BLACK,
+        TextForegroundColour::LightGray,
+        TextBackgroundColour::Black,
         false,
     );
 
@@ -239,13 +239,9 @@ impl ConsoleInner {
         let offset = ((row * self.width) + col) * 2;
         unsafe { core::ptr::write_volatile(self.addr.offset(offset), glyph) };
         let attr = if self.reverse {
-            let new_fg = self.attr.bg().as_u8();
-            let new_bg = self.attr.fg().as_u8();
-            Attr::new(
-                unsafe { TextForegroundColour::new_unchecked(new_fg) },
-                unsafe { TextBackgroundColour::new_unchecked(new_bg & 0x07) },
-                false,
-            )
+            let new_fg = self.attr.bg().make_foreground();
+            let new_bg = self.attr.fg().make_background();
+            Attr::new(new_fg, new_bg, false)
         } else {
             self.attr
         };
@@ -566,53 +562,53 @@ impl vte::Perform for ConsoleInner {
                         }
                         // Foreground
                         30 => {
-                            self.attr.set_fg(TextForegroundColour::BLACK);
+                            self.attr.set_fg(TextForegroundColour::Black);
                         }
                         31 => {
-                            self.attr.set_fg(TextForegroundColour::RED);
+                            self.attr.set_fg(TextForegroundColour::Red);
                         }
                         32 => {
-                            self.attr.set_fg(TextForegroundColour::GREEN);
+                            self.attr.set_fg(TextForegroundColour::Green);
                         }
                         33 => {
-                            self.attr.set_fg(TextForegroundColour::BROWN);
+                            self.attr.set_fg(TextForegroundColour::Brown);
                         }
                         34 => {
-                            self.attr.set_fg(TextForegroundColour::BLUE);
+                            self.attr.set_fg(TextForegroundColour::Blue);
                         }
                         35 => {
-                            self.attr.set_fg(TextForegroundColour::MAGENTA);
+                            self.attr.set_fg(TextForegroundColour::Magenta);
                         }
                         36 => {
-                            self.attr.set_fg(TextForegroundColour::CYAN);
+                            self.attr.set_fg(TextForegroundColour::Cyan);
                         }
                         37 | 39 => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_GRAY);
+                            self.attr.set_fg(TextForegroundColour::LightGray);
                         }
                         // Background
                         40 => {
-                            self.attr.set_bg(TextBackgroundColour::BLACK);
+                            self.attr.set_bg(TextBackgroundColour::Black);
                         }
                         41 => {
-                            self.attr.set_bg(TextBackgroundColour::RED);
+                            self.attr.set_bg(TextBackgroundColour::Red);
                         }
                         42 => {
-                            self.attr.set_bg(TextBackgroundColour::GREEN);
+                            self.attr.set_bg(TextBackgroundColour::Green);
                         }
                         43 => {
-                            self.attr.set_bg(TextBackgroundColour::BROWN);
+                            self.attr.set_bg(TextBackgroundColour::Brown);
                         }
                         44 => {
-                            self.attr.set_bg(TextBackgroundColour::BLUE);
+                            self.attr.set_bg(TextBackgroundColour::Blue);
                         }
                         45 => {
-                            self.attr.set_bg(TextBackgroundColour::MAGENTA);
+                            self.attr.set_bg(TextBackgroundColour::Magenta);
                         }
                         46 => {
-                            self.attr.set_bg(TextBackgroundColour::CYAN);
+                            self.attr.set_bg(TextBackgroundColour::Cyan);
                         }
                         47 | 49 => {
-                            self.attr.set_bg(TextBackgroundColour::LIGHT_GRAY);
+                            self.attr.set_bg(TextBackgroundColour::LightGray);
                         }
                         _ => {
                             // Ignore unknown code
@@ -623,35 +619,7 @@ impl vte::Perform for ConsoleInner {
                 // last, because they might set the colour first and set the
                 // bright bit afterwards.
                 if self.bright {
-                    match self.attr.fg() {
-                        TextForegroundColour::BLACK => {
-                            self.attr.set_fg(TextForegroundColour::DARK_GRAY);
-                        }
-                        TextForegroundColour::RED => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_RED);
-                        }
-                        TextForegroundColour::GREEN => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_GREEN);
-                        }
-                        TextForegroundColour::BROWN => {
-                            self.attr.set_fg(TextForegroundColour::YELLOW);
-                        }
-                        TextForegroundColour::BLUE => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_BLUE);
-                        }
-                        TextForegroundColour::MAGENTA => {
-                            self.attr.set_fg(TextForegroundColour::PINK);
-                        }
-                        TextForegroundColour::CYAN => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_CYAN);
-                        }
-                        TextForegroundColour::LIGHT_GRAY => {
-                            self.attr.set_fg(TextForegroundColour::WHITE);
-                        }
-                        _ => {
-                            // Do nothing
-                        }
-                    }
+                    self.attr.set_fg(self.attr.fg().brighten())
                 }
             }
             'A' => {
