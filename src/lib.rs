@@ -59,6 +59,8 @@ static IS_PANIC: AtomicBool = AtomicBool::new(false);
 /// Our keyboard controller
 static STD_INPUT: CsRefCell<StdInput> = CsRefCell::new(StdInput::new());
 
+static FILESYSTEM: fs::Filesystem = fs::Filesystem::new();
+
 // ===========================================================================
 // Macros
 // ===========================================================================
