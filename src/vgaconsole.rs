@@ -811,13 +811,20 @@ mod tests {
     ///
     /// Each glyph and attribute is printed like "xx yy", separated by "|" for
     /// each column, and "\n" for each row.
-    fn print_buffer(buffer: &[u8]) -> String {
+    fn print_buffer(buffer: &[u32]) -> String {
         use std::fmt::Write;
         let mut output = String::new();
         let mut pos = 0;
+        let base_ptr = buffer.as_ptr() as *const u8;
         for _r in 0..HEIGHT {
             for _c in 0..WIDTH {
-                write!(output, "{:02x} {:02x}|", buffer[pos], buffer[pos + 1]).unwrap();
+                write!(
+                    output,
+                    "{:02x} {:02x}|",
+                    unsafe { *base_ptr.add(pos) },
+                    unsafe { *base_ptr.add(pos + 1) }
+                )
+                .unwrap();
                 pos += 2;
             }
             writeln!(output).unwrap();
@@ -827,7 +834,7 @@ mod tests {
 
     #[test]
     fn basic_print() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"Hello\n");
         assert_eq!(
@@ -847,7 +854,7 @@ mod tests {
 
     #[test]
     fn cr_overprint() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"0\r1\n");
         // Second row
@@ -872,7 +879,7 @@ mod tests {
 
     #[test]
     fn scroll() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"0\n");
         console.write_bstr(b"1\n");
@@ -898,7 +905,7 @@ mod tests {
 
     #[test]
     fn home1() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[0;0H1\n");
@@ -921,7 +928,7 @@ mod tests {
 
     #[test]
     fn home2() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[1;1H1\n");
@@ -941,7 +948,7 @@ mod tests {
 
     #[test]
     fn home3() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[H1\n");
@@ -964,7 +971,7 @@ mod tests {
 
     #[test]
     fn movecursor() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"\x1b[2;2H1");
@@ -986,7 +993,7 @@ mod tests {
 
     #[test]
     fn sgr_reset() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"\x1b[0m1");
         assert_eq!(
@@ -1006,7 +1013,7 @@ mod tests {
 
     #[test]
     fn sgr_backgrounds() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1043,7 +1050,7 @@ mod tests {
 
     #[test]
     fn sgr_foregrounds() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1080,7 +1087,7 @@ mod tests {
 
     #[test]
     fn sgr_bold() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1119,7 +1126,7 @@ mod tests {
 
     #[test]
     fn sgr_all_three() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1151,7 +1158,7 @@ mod tests {
 
     #[test]
     fn cursor_up() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, print 0\n then go up a line and replace the 0 with a 1
         console.write_bstr(b"\x1b[H0\n\x1b[A1");
@@ -1217,7 +1224,7 @@ mod tests {
 
     #[test]
     fn cursor_down() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, go down 1 line, and print 0
         console.write_bstr(b"\x1b[H\x1b[B0");
@@ -1283,7 +1290,7 @@ mod tests {
 
     #[test]
     fn cursor_forward() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print .0.1.2..3
         console.write_bstr(b"\x1b[C0");
@@ -1305,7 +1312,7 @@ mod tests {
 
     #[test]
     fn cursor_backwards() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 123 then replace the 3 with a 4
         console.write_bstr(b"123\x1b[D4");
@@ -1363,7 +1370,7 @@ mod tests {
 
     #[test]
     fn cursor_next_line() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, print xxx, go down 1 line, and print 0
         console.write_bstr(b"\x1b[Hxxx\x1b[E0");
@@ -1430,7 +1437,7 @@ mod tests {
 
     #[test]
     fn cursor_previous_line() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print xx, xx, 11, 22, 33, 456 on the first five lines
         // Then go back and replace 4 with 7, 3 with 8, 2 with 9 and the first x with 0
@@ -1453,7 +1460,7 @@ mod tests {
 
     #[test]
     fn cursor_horizontal_absolute() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 12345 the replace the 3 with a 9
         console.write_bstr(b"12345\x1b[3G9");
@@ -1474,7 +1481,7 @@ mod tests {
 
     #[test]
     fn cursor_position() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // In row;col form.
         console.write_bstr(b"xxx\x1b[H0\x1b[;3H1\x1b[2;H2\x1b[3;4H3");
@@ -1498,7 +1505,7 @@ mod tests {
 
     #[test]
     fn erase_in_display_cursor_to_end() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1521,7 +1528,7 @@ mod tests {
 
     #[test]
     fn erase_in_display_start_to_cursor() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1544,7 +1551,7 @@ mod tests {
 
     #[test]
     fn erase_in_display_entire_screen() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1567,7 +1574,7 @@ mod tests {
 
     #[test]
     fn erase_in_line_cursor_to_end() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1590,7 +1597,7 @@ mod tests {
 
     #[test]
     fn erase_in_line_start_to_cursor() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1613,7 +1620,7 @@ mod tests {
 
     #[test]
     fn erase_in_line_entire_line() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
