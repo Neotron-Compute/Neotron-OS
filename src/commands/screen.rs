@@ -1,5 +1,8 @@
 //! Screen-related commands for Neotron OS
 
+use neotron_common_bios::video::RGBColour;
+use pc_keyboard::DecodedKey;
+
 use crate::{
     bios::{
         video::{Format, Mode},
@@ -27,6 +30,24 @@ pub static MODE_ITEM: menu::Item<Ctx> = menu::Item {
     },
     command: "mode",
     help: Some("List/change video mode"),
+};
+
+pub static GFX_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: gfx_cmd,
+        parameters: &[
+            menu::Parameter::Mandatory {
+                parameter_name: "new_mode",
+                help: Some("The new gfx mode to try"),
+            },
+            menu::Parameter::Optional {
+                parameter_name: "filename",
+                help: Some("a file to display"),
+            },
+        ],
+    },
+    command: "gfx",
+    help: Some("Test a graphics mode"),
 };
 
 /// Called when the "cls" command is executed.
@@ -85,6 +106,82 @@ fn mode_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx
         }
     } else {
         print_modes();
+    }
+}
+
+/// Called when the "gfx" command is executed
+fn gfx_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
+    let Some(new_mode) = menu::argument_finder(item, args, "new_mode").unwrap() else {
+        osprintln!("Missing arg");
+        return;
+    };
+    let file_name = menu::argument_finder(item, args, "filename").unwrap();
+    let Ok(mode_num) = new_mode.parse::<u8>() else {
+        osprintln!("Invalid integer {:?}", new_mode);
+        return;
+    };
+    let Some(mode) = Mode::try_from_u8(mode_num) else {
+        osprintln!("Invalid mode {:?}", new_mode);
+        return;
+    };
+    let api = crate::API.get();
+    let old_mode = (api.video_get_mode)();
+    let old_ptr = (api.video_get_framebuffer)();
+
+    let buffer = ctx.tpa.as_slice_u8();
+    let buffer_ptr = buffer.as_mut_ptr() as *mut u32;
+    if let Some(file_name) = file_name {
+        let Ok(file) = crate::FILESYSTEM.open_file(file_name, embedded_sdmmc::Mode::ReadOnly)
+        else {
+            osprintln!("No such file.");
+            return;
+        };
+        let _ = file.read(buffer);
+    } else {
+        // draw a dummy non-zero data. In Chunky1 this is a checkerboard.
+        let line_size_words = mode.line_size_bytes() / 4;
+        for row in 0..mode.vertical_lines() as usize {
+            let word = if (row % 2) == 0 {
+                0x5555_5555
+            } else {
+                0xAAAA_AAAA
+            };
+            for col in 0..line_size_words {
+                let idx = (row * line_size_words) + col;
+                unsafe {
+                    // Let's try stripes?
+                    buffer_ptr.add(idx).write_volatile(word);
+                }
+            }
+        }
+    }
+
+    if let neotron_common_bios::FfiResult::Err(e) =
+        unsafe { (api.video_set_mode)(mode, buffer_ptr) }
+    {
+        osprintln!("Couldn't set mode {}: {:?}", mode_num, e);
+    }
+
+    // Now wait for user input
+    let mut r = 0u8;
+    let mut g = 80u8;
+    let mut b = 160u8;
+    'wait: loop {
+        (api.video_wait_for_line)(0);
+        ((api.video_set_palette)(0, RGBColour::from_rgb(r, g, b)));
+        r = r.wrapping_add(1);
+        g = g.wrapping_add(1);
+        b = b.wrapping_add(1);
+
+        let keyin = crate::STD_INPUT.lock().get_raw();
+        if let Some(DecodedKey::Unicode('Q') | DecodedKey::Unicode('q')) = keyin {
+            break 'wait;
+        }
+    }
+
+    // Put it back as it was
+    unsafe {
+        (api.video_set_mode)(old_mode, old_ptr);
     }
 }
 
