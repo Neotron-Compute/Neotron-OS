@@ -52,7 +52,7 @@ impl VgaConsole {
         false,
     );
 
-    pub fn new(addr: *mut u8, width: isize, height: isize) -> VgaConsole {
+    pub fn new(addr: *mut u32, width: isize, height: isize) -> VgaConsole {
         VgaConsole {
             inner: ConsoleInner {
                 addr,
@@ -112,16 +112,31 @@ impl VgaConsole {
 ///
 /// Separate from the parser, so it can be passed to the `advance` method.
 struct ConsoleInner {
-    addr: *mut u8,
+    /// The start of our text buffer.
+    ///
+    /// Always 32-bit aligned.
+    addr: *mut u32,
+    /// The width of the screen in characters
     width: isize,
+    /// The height of the screen in characters
     height: isize,
+    /// The current row position in characters
     row: isize,
+    /// The current column position in characters
     col: isize,
+    /// The attribute to apply to the next character we draw
     attr: Attr,
+    /// Have we seen the ANSI 'bold' command?
     bright: bool,
+    /// Have we seen the ANSI 'reverse' command?
     reverse: bool,
+    /// Should we draw a cursor?
     cursor_wanted: bool,
+    /// How many times has the cursor been turned off?
+    ///
+    /// The cursor is only enabled when at `0`.
     cursor_depth: u8,
+    /// What character should be where the cursor currently is?
     cursor_holder: Option<u8>,
 }
 
@@ -237,7 +252,8 @@ impl ConsoleInner {
         }
 
         let offset = ((row * self.width) + col) * 2;
-        unsafe { core::ptr::write_volatile(self.addr.offset(offset), glyph) };
+        let byte_addr = self.addr as *mut u8;
+        unsafe { core::ptr::write_volatile(byte_addr.offset(offset), glyph) };
         let attr = if self.reverse {
             let new_fg = self.attr.bg().make_foreground();
             let new_bg = self.attr.fg().make_background();
@@ -246,7 +262,7 @@ impl ConsoleInner {
             self.attr
         };
 
-        unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), attr.as_u8()) };
+        unsafe { core::ptr::write_volatile(byte_addr.offset(offset + 1), attr.as_u8()) };
     }
 
     /// Read a glyph at the current position
@@ -266,20 +282,21 @@ impl ConsoleInner {
             assert!(self.cursor_holder.is_none());
         }
         let offset = ((row * self.width) + col) * 2;
-        unsafe { core::ptr::read_volatile(self.addr.offset(offset)) }
+        let byte_addr = self.addr as *const u8;
+        unsafe { core::ptr::read_volatile(byte_addr.offset(offset)) }
     }
 
     /// Move everyone on screen up one line, losing the top line.
     ///
     /// The bottom line will be all space characters.
     fn scroll_page(&mut self) {
-        let row_len_bytes = self.width * 2;
+        let row_len_words = self.width / 2;
         unsafe {
             // Scroll rows[1..=height-1] to become rows[0..=height-2].
             core::ptr::copy(
-                self.addr.offset(row_len_bytes),
+                self.addr.offset(row_len_words),
                 self.addr,
-                (row_len_bytes * (self.height - 1)) as usize,
+                (row_len_words * (self.height - 1)) as usize,
             );
         }
         // Blank the bottom line of the screen (rows[height-1]).

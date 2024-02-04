@@ -389,7 +389,9 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 
     if let Some(mut mode) = config.get_vga_console() {
         // Set the configured mode
-        if let bios::FfiResult::Err(_e) = (api.video_set_mode)(mode) {
+        if let bios::FfiResult::Err(_e) =
+            unsafe { (api.video_set_mode)(mode, core::ptr::null_mut()) }
+        {
             // Failed to change mode - check what mode we're in
             mode = (api.video_get_mode)();
         };

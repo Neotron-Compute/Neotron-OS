@@ -26,7 +26,7 @@ pub static MODE_ITEM: menu::Item<Ctx> = menu::Item {
         }],
     },
     command: "mode",
-    help: Some("List possible video modes"),
+    help: Some("List/change video mode"),
 };
 
 /// Called when the "cls" command is executed.
@@ -63,7 +63,15 @@ fn mode_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx
                 return;
             }
         }
-        match (api.video_set_mode)(mode) {
+        if (api.video_mode_needs_vram)(mode) {
+            // The OS currently has no VRAM for text modes
+            osprintln!("That mode requires more VRAM than the BIOS has.");
+            return;
+        }
+        // # Safety
+        //
+        // It's always OK to pass NULl to this API.
+        match unsafe { (api.video_set_mode)(mode, core::ptr::null_mut()) } {
             ApiResult::Ok(_) => {
                 let mut guard = crate::VGA_CONSOLE.lock();
                 if let Some(console) = guard.as_mut() {
