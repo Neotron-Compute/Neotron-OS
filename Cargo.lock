@@ -71,8 +71,9 @@ checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
 
 [[package]]
 name = "embedded-sdmmc"
-version = "0.6.0"
-source = "git+https://github.com/rust-embedded-community/embedded-sdmmc-rs.git?rev=ae5e116#ae5e1165d86dfaeee80cdb2547775183463066c5"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da528dbf3f1c1f0b321552bc334d04799bb17c1936de55bccfb643a4f39300d8"
 dependencies = [
  "byteorder",
  "embedded-hal",
