@@ -59,6 +59,8 @@ static IS_PANIC: AtomicBool = AtomicBool::new(false);
 /// Our keyboard controller
 static STD_INPUT: CsRefCell<StdInput> = CsRefCell::new(StdInput::new());
 
+static FILESYSTEM: fs::Filesystem = fs::Filesystem::new();
+
 // ===========================================================================
 // Macros
 // ===========================================================================
@@ -387,7 +389,9 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
 
     if let Some(mut mode) = config.get_vga_console() {
         // Set the configured mode
-        if let bios::FfiResult::Err(_e) = (api.video_set_mode)(mode) {
+        if let bios::FfiResult::Err(_e) =
+            unsafe { (api.video_set_mode)(mode, core::ptr::null_mut()) }
+        {
             // Failed to change mode - check what mode we're in
             mode = (api.video_get_mode)();
         };

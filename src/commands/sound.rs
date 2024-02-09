@@ -1,6 +1,6 @@
 //! Sound related commands for Neotron OS
 
-use crate::{bios, osprint, osprintln, Ctx, API};
+use crate::{bios, osprint, osprintln, Ctx, API, FILESYSTEM};
 
 pub static MIXER_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -88,10 +88,11 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
     for mixer_id in 0u8..=255u8 {
         match (api.audio_mixer_channel_get_info)(mixer_id) {
             bios::FfiOption::Some(mixer_info) => {
-                let dir_str = match mixer_info.direction {
-                    bios::audio::Direction::Input => "In",
-                    bios::audio::Direction::Loopback => "Loop",
-                    bios::audio::Direction::Output => "Out",
+                let dir_str = match mixer_info.direction.make_safe() {
+                    Ok(bios::audio::Direction::Input) => "In",
+                    Ok(bios::audio::Direction::Loopback) => "Loop",
+                    Ok(bios::audio::Direction::Output) => "Out",
+                    _ => "??",
                 };
                 if (Some(mixer_id) == mixer_int)
                     || selected_mixer
@@ -118,18 +119,9 @@ fn mixer(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx: &
 
 /// Called when the "play" command is executed.
 fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
-    fn play_inner(
-        file_name: &str,
-        scratch: &mut [u8],
-    ) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
+    fn play_inner(file_name: &str, scratch: &mut [u8]) -> Result<(), crate::fs::Error> {
         osprintln!("Loading /{} from Block Device 0", file_name);
-        let bios_block = crate::fs::BiosBlock();
-        let time = crate::fs::BiosTime();
-        let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
-        // Open the first partition
-        let volume = mgr.open_volume(embedded_sdmmc::VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(volume)?;
-        let file = mgr.open_file_in_dir(root_dir, file_name, embedded_sdmmc::Mode::ReadOnly)?;
+        let file = FILESYSTEM.open_file(file_name, embedded_sdmmc::Mode::ReadOnly)?;
 
         osprintln!("Press Q to quit, P to pause/unpause...");
 
@@ -141,9 +133,9 @@ fn play(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
 
         let mut pause = false;
 
-        'playback: while !mgr.file_eof(file).unwrap() {
+        'playback: while !file.is_eof() {
             if !pause {
-                let bytes_read = mgr.read(file, buffer)?;
+                let bytes_read = file.read(buffer)?;
                 let mut buffer = &buffer[0..bytes_read];
                 while !buffer.is_empty() {
                     let slice = bios::FfiByteSlice::new(buffer);
