@@ -1,6 +1,5 @@
 //! Screen-related commands for Neotron OS
 
-use neotron_common_bios::video::RGBColour;
 use pc_keyboard::DecodedKey;
 
 use crate::{
@@ -163,16 +162,7 @@ fn gfx_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: 
     }
 
     // Now wait for user input
-    let mut r = 0u8;
-    let mut g = 80u8;
-    let mut b = 160u8;
     'wait: loop {
-        (api.video_wait_for_line)(0);
-        ((api.video_set_palette)(0, RGBColour::from_rgb(r, g, b)));
-        r = r.wrapping_add(1);
-        g = g.wrapping_add(1);
-        b = b.wrapping_add(1);
-
         let keyin = crate::STD_INPUT.lock().get_raw();
         if let Some(DecodedKey::Unicode('Q') | DecodedKey::Unicode('q')) = keyin {
             break 'wait;
