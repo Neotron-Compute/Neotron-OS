@@ -17,4 +17,3 @@ panic = "abort"
 
 [profile.dev]
 panic = "abort"
-

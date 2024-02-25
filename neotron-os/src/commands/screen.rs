@@ -1,5 +1,22 @@
 //! Screen-related commands for Neotron OS
 
+static SLIDES: [&[u8]; 11] = [
+    include_bytes!("../slide_pico_vga.bmp"),
+    include_bytes!("../slide_pico_audio.bmp"),
+    include_bytes!("../slide_bios.bmp"),
+    include_bytes!("../slide_os.bmp"),
+    include_bytes!("../slide_oss.bmp"),
+    include_bytes!("../slide_sdk.bmp"),
+    include_bytes!("../slide_stars.bmp"),
+    include_bytes!("../slide_px3.bmp"),
+    include_bytes!("../slide_pi.bmp"),
+    include_bytes!("../slide_win30.bmp"),
+    include_bytes!("../slide_win31.bmp"),
+];
+
+use neotron_common_bios::video::Timing;
+use pc_keyboard::DecodedKey;
+
 use crate::{
     bios::{
         video::{Format, Mode},
@@ -45,6 +62,15 @@ pub static GFX_ITEM: menu::Item<Ctx> = menu::Item {
     },
     command: "gfx",
     help: Some("Test a graphics mode"),
+};
+
+pub static DEMO_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: demo_cmd,
+        parameters: &[],
+    },
+    command: "demo",
+    help: Some("Run demo"),
 };
 
 /// Called when the "cls" command is executed.
@@ -219,6 +245,155 @@ fn print_modes() {
     if !any_mode {
         osprintln!("No valid modes found");
     }
+}
+
+/// Called when the "demo" command is executed.
+fn demo_cmd(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
+    let api = crate::API.get();
+    let old_mode = (api.video_get_mode)();
+    let old_ptr = (api.video_get_framebuffer)();
+    let buffer = ctx.tpa.as_slice_u32();
+    let buffer_ptr = buffer.as_mut_ptr();
+    let old_palette = [
+        (api.video_get_palette)(0),
+        (api.video_get_palette)(1),
+        (api.video_get_palette)(2),
+        (api.video_get_palette)(3),
+        (api.video_get_palette)(4),
+        (api.video_get_palette)(5),
+        (api.video_get_palette)(6),
+        (api.video_get_palette)(7),
+        (api.video_get_palette)(8),
+        (api.video_get_palette)(9),
+        (api.video_get_palette)(10),
+        (api.video_get_palette)(11),
+        (api.video_get_palette)(12),
+        (api.video_get_palette)(13),
+        (api.video_get_palette)(14),
+        (api.video_get_palette)(15),
+    ];
+
+    'slides: for slide_bytes in SLIDES.iter().cycle().cloned() {
+        if let Err(_e) = show_slide(slide_bytes, api, buffer_ptr) {
+            break;
+        }
+        // Now wait for user input - Q to quit, ' ' to skip
+        'wait: for _ in 0..450 {
+            // 450 frames = 7.5 seconds
+            (api.video_wait_for_line)(478);
+            (api.video_wait_for_line)(479);
+            let keyin = crate::STD_INPUT.lock().get_raw();
+            if let Some(DecodedKey::Unicode('Q') | DecodedKey::Unicode('q')) = keyin {
+                break 'slides;
+            }
+            if let Some(DecodedKey::Unicode(' ')) = keyin {
+                break 'wait;
+            }
+        }
+    }
+
+    // Put it back as it was
+    unsafe {
+        (api.video_set_mode)(old_mode, old_ptr);
+        for (idx, colour) in old_palette.iter().enumerate() {
+            if let neotron_common_bios::FfiOption::Some(colour) = colour {
+                (api.video_set_palette)(idx as u8, *colour);
+            }
+        }
+    }
+}
+
+enum SlideError {
+    Unspecified,
+}
+
+fn show_slide(
+    data: &[u8],
+    api: &neotron_common_bios::Api,
+    buffer_ptr: *mut u32,
+) -> Result<(), SlideError> {
+    use embedded_graphics::pixelcolor::RgbColor;
+
+    let raw_bmp = tinybmp::RawBmp::from_slice(data).map_err(|_| SlideError::Unspecified)?;
+    let header = raw_bmp.header();
+    if header.image_size.width > 640 || header.image_size.height > 480 {
+        return Err(SlideError::Unspecified);
+    }
+
+    let Some(table) = raw_bmp.color_table() else {
+        // can only do palettised images
+        return Err(SlideError::Unspecified);
+    };
+
+    // Set palette to black
+    for entry in 0..table.len() {
+        (api.video_set_palette)(entry as u8, neotron_common_bios::video::RGBColour::BLACK);
+    }
+
+    let (mode, bpp, px_per_word_shift) = match (header.bpp, table.len() <= 4) {
+        (tinybmp::Bpp::Bits4, true) => (Mode::new(Timing::T640x480, Format::Chunky2), 2, 4),
+        (tinybmp::Bpp::Bits4, false) => (Mode::new(Timing::T640x480, Format::Chunky4), 4, 3),
+        b => {
+            // can't display it
+            osprintln!("Couldn't handle {:?}", b);
+            return Err(SlideError::Unspecified);
+        }
+    };
+
+    if let neotron_common_bios::FfiResult::Err(e) =
+        unsafe { (api.video_set_mode)(mode, buffer_ptr) }
+    {
+        osprintln!("Couldn't set mode {:?}: {:?}", mode, e);
+        return Err(SlideError::Unspecified);
+    }
+
+    // Copy bitmap
+    let mut pixel_word = 0;
+    let mut offset_word = 0;
+    let mut left_in_word = 1 << px_per_word_shift;
+    let mut y = 0;
+    let mut x = 0;
+    // annoyingly bitmaps aren't always top-left to bottom-right.
+    for px in raw_bmp.pixels() {
+        if y != px.position.y || x != px.position.x {
+            // we assume discontinuities only happen at line breaks
+            y = px.position.y;
+            x = px.position.x;
+            offset_word = (((y * 640) + x) >> px_per_word_shift) as usize;
+            left_in_word = 1 << px_per_word_shift;
+            pixel_word = 0;
+        }
+
+        pixel_word <<= bpp;
+        pixel_word |= px.color;
+
+        left_in_word -= 1;
+        if left_in_word == 0 {
+            pixel_word = pixel_word.to_be();
+            unsafe {
+                buffer_ptr.add(offset_word).write_volatile(pixel_word);
+            }
+            pixel_word = 0;
+            left_in_word = 1 << px_per_word_shift;
+            offset_word += 1;
+        }
+
+        x += 1;
+        if x == 640 {
+            x = 0;
+            y += 1;
+        }
+    }
+
+    // Set palette to correct colours now picture is drawn
+    for entry in 0..table.len() {
+        if let Some(rgb) = table.get(entry as u32) {
+            let rgb666 = neotron_common_bios::video::RGBColour::from_rgb(rgb.r(), rgb.g(), rgb.b());
+            (api.video_set_palette)(entry as u8, rgb666);
+        }
+    }
+
+    Ok(())
 }
 
 // End of file
