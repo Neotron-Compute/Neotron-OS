@@ -22,7 +22,7 @@
 MEMORY
 {
     /* The first 128 KiB is for the BIOS. We get the rest. */
-    FLASH (rx)  : ORIGIN = 0x10020000, LENGTH = 256K
+    FLASH (rx)  : ORIGIN = 0x10020000, LENGTH = 512K
 
     /*
      * The RAM reserved for the OS. Above this is the Transient Program Area.

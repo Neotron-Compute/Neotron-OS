@@ -42,6 +42,7 @@ panic = "abort"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false }
+embedded-graphics = "0.8.1"
 embedded-sdmmc = { version = "0.7", default-features = false }
 heapless = "0.7"
 menu = "0.3"
@@ -52,6 +53,7 @@ pc-keyboard = "0.7"
 postcard = "1.0"
 r0 = "1.0"
 serde = { version = "1.0", default-features = false }
+tinybmp = { path = "../tinybmp" }
 vte = "0.12"
 
 [features]
