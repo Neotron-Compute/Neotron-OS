@@ -53,7 +53,7 @@ pc-keyboard = "0.7"
 postcard = "1.0"
 r0 = "1.0"
 serde = { version = "1.0", default-features = false }
-tinybmp = { path = "../tinybmp" }
+tinybmp = { git = "https://github.com/embedded-graphics/tinybmp", rev="247718592bb7a1904f4846e5f1adef87d33e1781" }
 vte = "0.12"
 
 [features]

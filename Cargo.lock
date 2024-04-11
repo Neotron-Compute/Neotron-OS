@@ -336,6 +336,7 @@ dependencies = [
 [[package]]
 name = "tinybmp"
 version = "0.5.0"
+source = "git+https://github.com/embedded-graphics/tinybmp?rev=247718592bb7a1904f4846e5f1adef87d33e1781#247718592bb7a1904f4846e5f1adef87d33e1781"
 dependencies = [
  "embedded-graphics",
 ]
