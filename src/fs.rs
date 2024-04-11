@@ -1,9 +1,13 @@
 //! Filesystem related types
 
 use chrono::{Datelike, Timelike};
+use embedded_sdmmc::RawVolume;
 
-use crate::{bios, API};
+use crate::{bios, refcell::CsRefCell, API, FILESYSTEM};
 
+/// Represents a block device that reads/writes disk blocks using the BIOS.
+///
+/// Currently only block device 0 is supported.
 pub struct BiosBlock();
 
 impl embedded_sdmmc::BlockDevice for BiosBlock {
@@ -65,6 +69,7 @@ impl embedded_sdmmc::BlockDevice for BiosBlock {
     }
 }
 
+/// A type that lets you fetch the current time from the BIOS.
 pub struct BiosTime();
 
 impl embedded_sdmmc::TimeSource for BiosTime {
@@ -78,6 +83,169 @@ impl embedded_sdmmc::TimeSource for BiosTime {
             minutes: time.minute() as u8,
             seconds: time.second() as u8,
         }
+    }
+}
+
+/// The errors this module can produce
+#[derive(Debug)]
+pub enum Error {
+    /// Filesystem error
+    Io(embedded_sdmmc::Error<bios::Error>),
+}
+
+impl From<embedded_sdmmc::Error<bios::Error>> for Error {
+    fn from(value: embedded_sdmmc::Error<bios::Error>) -> Self {
+        Error::Io(value)
+    }
+}
+
+/// Represents an open file
+pub struct File {
+    inner: embedded_sdmmc::RawFile,
+}
+
+impl File {
+    /// Read from a file
+    pub fn read(&self, buffer: &mut [u8]) -> Result<usize, Error> {
+        FILESYSTEM.file_read(self, buffer)
+    }
+
+    /// Are we at the end of the file
+    pub fn is_eof(&self) -> bool {
+        FILESYSTEM
+            .file_eof(self)
+            .expect("File handle should be valid")
+    }
+
+    /// Seek to a position relative to the start of the file
+    pub fn seek_from_start(&self, offset: u32) -> Result<(), Error> {
+        FILESYSTEM.file_seek_from_start(self, offset)
+    }
+
+    /// What is the length of this file?
+    pub fn length(&self) -> u32 {
+        FILESYSTEM
+            .file_length(self)
+            .expect("File handle should be valid")
+    }
+}
+
+impl Drop for File {
+    fn drop(&mut self) {
+        FILESYSTEM
+            .close_raw_file(self.inner)
+            .expect("Should only be dropping valid files!");
+    }
+}
+
+/// Represent all open files and filesystems
+pub struct Filesystem {
+    volume_manager: CsRefCell<Option<embedded_sdmmc::VolumeManager<BiosBlock, BiosTime, 4, 4, 1>>>,
+    first_volume: CsRefCell<Option<RawVolume>>,
+}
+
+impl Filesystem {
+    /// Create a new filesystem
+    pub const fn new() -> Filesystem {
+        Filesystem {
+            volume_manager: CsRefCell::new(None),
+            first_volume: CsRefCell::new(None),
+        }
+    }
+
+    /// Open a file on the filesystem
+    pub fn open_file(&self, name: &str, mode: embedded_sdmmc::Mode) -> Result<File, Error> {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        let mut volume = self.first_volume.lock();
+        if volume.is_none() {
+            *volume = Some(fs.open_raw_volume(embedded_sdmmc::VolumeIdx(0))?);
+        }
+        let volume = volume.unwrap();
+        let mut root = fs.open_root_dir(volume)?.to_directory(fs);
+        let file = root.open_file_in_dir(name, mode)?;
+        let raw_file = file.to_raw_file();
+        Ok(File { inner: raw_file })
+    }
+
+    /// Walk through the root directory
+    pub fn iterate_root_dir<F>(&self, f: F) -> Result<(), Error>
+    where
+        F: FnMut(&embedded_sdmmc::DirEntry),
+    {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        let mut volume = self.first_volume.lock();
+        if volume.is_none() {
+            *volume = Some(fs.open_raw_volume(embedded_sdmmc::VolumeIdx(0))?);
+        }
+        let volume = volume.unwrap();
+        let mut root = fs.open_root_dir(volume)?.to_directory(fs);
+        root.iterate_dir(f)?;
+        Ok(())
+    }
+
+    /// Read from an open file
+    pub fn file_read(&self, file: &File, buffer: &mut [u8]) -> Result<usize, Error> {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        let bytes_read = fs.read(file.inner, buffer)?;
+        Ok(bytes_read)
+    }
+
+    /// How large is a file?
+    pub fn file_length(&self, file: &File) -> Result<u32, Error> {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        let length = fs.file_length(file.inner)?;
+        Ok(length)
+    }
+
+    /// Seek a file with an offset from the start of the file.
+    pub fn file_seek_from_start(&self, file: &File, offset: u32) -> Result<(), Error> {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        fs.file_seek_from_start(file.inner, offset)?;
+        Ok(())
+    }
+
+    /// Are we at the end of the file
+    pub fn file_eof(&self, file: &File) -> Result<bool, Error> {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        let is_eof = fs.file_eof(file.inner)?;
+        Ok(is_eof)
+    }
+
+    /// Close an open file
+    ///
+    /// Only used by File's drop impl.
+    fn close_raw_file(&self, file: embedded_sdmmc::RawFile) -> Result<(), Error> {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        fs.close_file(file)?;
+        Ok(())
     }
 }
 

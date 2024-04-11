@@ -152,10 +152,11 @@ fn lsbus(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx:
     osprintln!("Neotron Bus Devices:");
     for dev_idx in 0..=255u8 {
         if let bios::FfiOption::Some(device_info) = (api.bus_get_info)(dev_idx) {
-            let kind = match device_info.kind {
-                bios::bus::PeripheralKind::Slot => "Slot",
-                bios::bus::PeripheralKind::SdCard => "SdCard",
-                bios::bus::PeripheralKind::Reserved => "Reserved",
+            let kind = match device_info.kind.make_safe() {
+                Ok(bios::bus::PeripheralKind::Slot) => "Slot",
+                Ok(bios::bus::PeripheralKind::SdCard) => "SdCard",
+                Ok(bios::bus::PeripheralKind::Reserved) => "Reserved",
+                _ => "Unknown",
             };
             osprintln!("\t{}: {} ({})", dev_idx, device_info.name, kind);
             found = true;
@@ -205,11 +206,12 @@ fn lsuart(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx
     osprintln!("UART Devices:");
     for dev_idx in 0..=255u8 {
         if let bios::FfiOption::Some(device_info) = (api.serial_get_info)(dev_idx) {
-            let device_type = match device_info.device_type {
-                bios::serial::DeviceType::Rs232 => "RS232",
-                bios::serial::DeviceType::TtlUart => "TTL",
-                bios::serial::DeviceType::UsbCdc => "USB",
-                bios::serial::DeviceType::Midi => "MIDI",
+            let device_type = match device_info.device_type.make_safe() {
+                Ok(bios::serial::DeviceType::Rs232) => "RS232",
+                Ok(bios::serial::DeviceType::TtlUart) => "TTL",
+                Ok(bios::serial::DeviceType::UsbCdc) => "USB",
+                Ok(bios::serial::DeviceType::Midi) => "MIDI",
+                _ => "Unknown",
             };
             osprintln!("\t{}: {} ({})", dev_idx, device_info.name, device_type);
             found = true;
@@ -225,13 +227,13 @@ fn shutdown(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx
     let api = API.get();
     if let Ok(Some(_)) = menu::argument_finder(item, args, "reboot") {
         osprintln!("Rebooting...");
-        (api.power_control)(bios::PowerMode::Reset);
+        (api.power_control)(bios::PowerMode::Reset.make_ffi_safe());
     } else if let Ok(Some(_)) = menu::argument_finder(item, args, "bootloader") {
         osprintln!("Rebooting into bootloader...");
-        (api.power_control)(bios::PowerMode::Bootloader);
+        (api.power_control)(bios::PowerMode::Bootloader.make_ffi_safe());
     } else {
         osprintln!("Shutting down...");
-        (api.power_control)(bios::PowerMode::Off);
+        (api.power_control)(bios::PowerMode::Off.make_ffi_safe());
     }
 }
 

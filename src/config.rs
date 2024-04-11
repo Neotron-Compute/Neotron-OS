@@ -55,10 +55,10 @@ impl Config {
                 0,
                 bios::serial::Config {
                     data_rate_bps: self.serial_baud,
-                    data_bits: bios::serial::DataBits::Eight,
-                    stop_bits: bios::serial::StopBits::One,
-                    parity: bios::serial::Parity::None,
-                    handshaking: bios::serial::Handshaking::None,
+                    data_bits: bios::serial::DataBits::Eight.make_ffi_safe(),
+                    stop_bits: bios::serial::StopBits::One.make_ffi_safe(),
+                    parity: bios::serial::Parity::None.make_ffi_safe(),
+                    handshaking: bios::serial::Handshaking::None.make_ffi_safe(),
                 },
             ))
         } else {

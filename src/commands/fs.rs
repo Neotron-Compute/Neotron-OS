@@ -1,6 +1,6 @@
 //! File Systems related commands for Neotron OS
 
-use crate::{bios, osprint, osprintln, Ctx};
+use crate::{osprint, osprintln, Ctx, FILESYSTEM};
 
 pub static DIR_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
@@ -49,17 +49,11 @@ pub static TYPE_ITEM: menu::Item<Ctx> = menu::Item {
 
 /// Called when the "dir" command is executed.
 fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
-    fn work() -> Result<(), embedded_sdmmc::Error<bios::Error>> {
+    fn work() -> Result<(), crate::fs::Error> {
         osprintln!("Listing files on Block Device 0, /");
-        let bios_block = crate::fs::BiosBlock();
-        let time = crate::fs::BiosTime();
-        let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
-        // Open the first partition
-        let volume = mgr.open_volume(embedded_sdmmc::VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(volume)?;
-        let mut total_bytes = 0u64;
+        let mut total_bytes = 0;
         let mut num_files = 0;
-        mgr.iterate_dir(root_dir, |dir_entry| {
+        FILESYSTEM.iterate_root_dir(|dir_entry| {
             let padding = 8 - dir_entry.name.base_name().len();
             for b in dir_entry.name.base_name() {
                 let ch = *b as char;
@@ -124,17 +118,11 @@ fn load(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
 
 /// Called when the "exec" command is executed.
 fn exec(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
-    fn work(ctx: &mut Ctx, filename: &str) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
-        let bios_block = crate::fs::BiosBlock();
-        let time = crate::fs::BiosTime();
-        let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
-        // Open the first partition
-        let volume = mgr.open_volume(embedded_sdmmc::VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(volume)?;
-        let file = mgr.open_file_in_dir(root_dir, filename, embedded_sdmmc::Mode::ReadOnly)?;
+    fn work(ctx: &mut Ctx, filename: &str) -> Result<(), crate::fs::Error> {
+        let file = FILESYSTEM.open_file(filename, embedded_sdmmc::Mode::ReadOnly)?;
         let buffer = ctx.tpa.as_slice_u8();
-        let count = mgr.read(file, buffer)?;
-        if count != mgr.file_length(file)? as usize {
+        let count = file.read(buffer)?;
+        if count != file.length() as usize {
             osprintln!("File too large! Max {} bytes allowed.", buffer.len());
             return Ok(());
         }
@@ -159,17 +147,11 @@ fn exec(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
 
 /// Called when the "type" command is executed.
 fn typefn(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
-    fn work(ctx: &mut Ctx, filename: &str) -> Result<(), embedded_sdmmc::Error<bios::Error>> {
-        let bios_block = crate::fs::BiosBlock();
-        let time = crate::fs::BiosTime();
-        let mut mgr = embedded_sdmmc::VolumeManager::new(bios_block, time);
-        // Open the first partition
-        let volume = mgr.open_volume(embedded_sdmmc::VolumeIdx(0))?;
-        let root_dir = mgr.open_root_dir(volume)?;
-        let file = mgr.open_file_in_dir(root_dir, filename, embedded_sdmmc::Mode::ReadOnly)?;
+    fn work(ctx: &mut Ctx, filename: &str) -> Result<(), crate::fs::Error> {
+        let file = FILESYSTEM.open_file(filename, embedded_sdmmc::Mode::ReadOnly)?;
         let buffer = ctx.tpa.as_slice_u8();
-        let count = mgr.read(file, buffer)?;
-        if count != mgr.file_length(file)? as usize {
+        let count = file.read(buffer)?;
+        if count != file.length() as usize {
             osprintln!("File too large! Max {} bytes allowed.", buffer.len());
             return Ok(());
         }

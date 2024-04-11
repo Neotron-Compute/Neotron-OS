@@ -47,12 +47,12 @@ pub struct VgaConsole {
 impl VgaConsole {
     /// White on Black
     const DEFAULT_ATTR: Attr = Attr::new(
-        TextForegroundColour::LIGHT_GRAY,
-        TextBackgroundColour::BLACK,
+        TextForegroundColour::LightGray,
+        TextBackgroundColour::Black,
         false,
     );
 
-    pub fn new(addr: *mut u8, width: isize, height: isize) -> VgaConsole {
+    pub fn new(addr: *mut u32, width: isize, height: isize) -> VgaConsole {
         VgaConsole {
             inner: ConsoleInner {
                 addr,
@@ -112,23 +112,38 @@ impl VgaConsole {
 ///
 /// Separate from the parser, so it can be passed to the `advance` method.
 struct ConsoleInner {
-    addr: *mut u8,
+    /// The start of our text buffer.
+    ///
+    /// Always 32-bit aligned.
+    addr: *mut u32,
+    /// The width of the screen in characters
     width: isize,
+    /// The height of the screen in characters
     height: isize,
+    /// The current row position in characters
     row: isize,
+    /// The current column position in characters
     col: isize,
+    /// The attribute to apply to the next character we draw
     attr: Attr,
+    /// Have we seen the ANSI 'bold' command?
     bright: bool,
+    /// Have we seen the ANSI 'reverse' command?
     reverse: bool,
+    /// Should we draw a cursor?
     cursor_wanted: bool,
+    /// How many times has the cursor been turned off?
+    ///
+    /// The cursor is only enabled when at `0`.
     cursor_depth: u8,
+    /// What character should be where the cursor currently is?
     cursor_holder: Option<u8>,
 }
 
 impl ConsoleInner {
     const DEFAULT_ATTR: Attr = Attr::new(
-        TextForegroundColour::LIGHT_GRAY,
-        TextBackgroundColour::BLACK,
+        TextForegroundColour::LightGray,
+        TextBackgroundColour::Black,
         false,
     );
 
@@ -237,20 +252,17 @@ impl ConsoleInner {
         }
 
         let offset = ((row * self.width) + col) * 2;
-        unsafe { core::ptr::write_volatile(self.addr.offset(offset), glyph) };
+        let byte_addr = self.addr as *mut u8;
+        unsafe { core::ptr::write_volatile(byte_addr.offset(offset), glyph) };
         let attr = if self.reverse {
-            let new_fg = self.attr.bg().as_u8();
-            let new_bg = self.attr.fg().as_u8();
-            Attr::new(
-                unsafe { TextForegroundColour::new_unchecked(new_fg) },
-                unsafe { TextBackgroundColour::new_unchecked(new_bg & 0x07) },
-                false,
-            )
+            let new_fg = self.attr.bg().make_foreground();
+            let new_bg = self.attr.fg().make_background();
+            Attr::new(new_fg, new_bg, false)
         } else {
             self.attr
         };
 
-        unsafe { core::ptr::write_volatile(self.addr.offset(offset + 1), attr.as_u8()) };
+        unsafe { core::ptr::write_volatile(byte_addr.offset(offset + 1), attr.as_u8()) };
     }
 
     /// Read a glyph at the current position
@@ -270,20 +282,21 @@ impl ConsoleInner {
             assert!(self.cursor_holder.is_none());
         }
         let offset = ((row * self.width) + col) * 2;
-        unsafe { core::ptr::read_volatile(self.addr.offset(offset)) }
+        let byte_addr = self.addr as *const u8;
+        unsafe { core::ptr::read_volatile(byte_addr.offset(offset)) }
     }
 
     /// Move everyone on screen up one line, losing the top line.
     ///
     /// The bottom line will be all space characters.
     fn scroll_page(&mut self) {
-        let row_len_bytes = self.width * 2;
+        let row_len_words = self.width / 2;
         unsafe {
             // Scroll rows[1..=height-1] to become rows[0..=height-2].
             core::ptr::copy(
-                self.addr.offset(row_len_bytes),
+                self.addr.offset(row_len_words),
                 self.addr,
-                (row_len_bytes * (self.height - 1)) as usize,
+                (row_len_words * (self.height - 1)) as usize,
             );
         }
         // Blank the bottom line of the screen (rows[height-1]).
@@ -566,53 +579,53 @@ impl vte::Perform for ConsoleInner {
                         }
                         // Foreground
                         30 => {
-                            self.attr.set_fg(TextForegroundColour::BLACK);
+                            self.attr.set_fg(TextForegroundColour::Black);
                         }
                         31 => {
-                            self.attr.set_fg(TextForegroundColour::RED);
+                            self.attr.set_fg(TextForegroundColour::Red);
                         }
                         32 => {
-                            self.attr.set_fg(TextForegroundColour::GREEN);
+                            self.attr.set_fg(TextForegroundColour::Green);
                         }
                         33 => {
-                            self.attr.set_fg(TextForegroundColour::BROWN);
+                            self.attr.set_fg(TextForegroundColour::Brown);
                         }
                         34 => {
-                            self.attr.set_fg(TextForegroundColour::BLUE);
+                            self.attr.set_fg(TextForegroundColour::Blue);
                         }
                         35 => {
-                            self.attr.set_fg(TextForegroundColour::MAGENTA);
+                            self.attr.set_fg(TextForegroundColour::Magenta);
                         }
                         36 => {
-                            self.attr.set_fg(TextForegroundColour::CYAN);
+                            self.attr.set_fg(TextForegroundColour::Cyan);
                         }
                         37 | 39 => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_GRAY);
+                            self.attr.set_fg(TextForegroundColour::LightGray);
                         }
                         // Background
                         40 => {
-                            self.attr.set_bg(TextBackgroundColour::BLACK);
+                            self.attr.set_bg(TextBackgroundColour::Black);
                         }
                         41 => {
-                            self.attr.set_bg(TextBackgroundColour::RED);
+                            self.attr.set_bg(TextBackgroundColour::Red);
                         }
                         42 => {
-                            self.attr.set_bg(TextBackgroundColour::GREEN);
+                            self.attr.set_bg(TextBackgroundColour::Green);
                         }
                         43 => {
-                            self.attr.set_bg(TextBackgroundColour::BROWN);
+                            self.attr.set_bg(TextBackgroundColour::Brown);
                         }
                         44 => {
-                            self.attr.set_bg(TextBackgroundColour::BLUE);
+                            self.attr.set_bg(TextBackgroundColour::Blue);
                         }
                         45 => {
-                            self.attr.set_bg(TextBackgroundColour::MAGENTA);
+                            self.attr.set_bg(TextBackgroundColour::Magenta);
                         }
                         46 => {
-                            self.attr.set_bg(TextBackgroundColour::CYAN);
+                            self.attr.set_bg(TextBackgroundColour::Cyan);
                         }
                         47 | 49 => {
-                            self.attr.set_bg(TextBackgroundColour::LIGHT_GRAY);
+                            self.attr.set_bg(TextBackgroundColour::LightGray);
                         }
                         _ => {
                             // Ignore unknown code
@@ -623,35 +636,7 @@ impl vte::Perform for ConsoleInner {
                 // last, because they might set the colour first and set the
                 // bright bit afterwards.
                 if self.bright {
-                    match self.attr.fg() {
-                        TextForegroundColour::BLACK => {
-                            self.attr.set_fg(TextForegroundColour::DARK_GRAY);
-                        }
-                        TextForegroundColour::RED => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_RED);
-                        }
-                        TextForegroundColour::GREEN => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_GREEN);
-                        }
-                        TextForegroundColour::BROWN => {
-                            self.attr.set_fg(TextForegroundColour::YELLOW);
-                        }
-                        TextForegroundColour::BLUE => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_BLUE);
-                        }
-                        TextForegroundColour::MAGENTA => {
-                            self.attr.set_fg(TextForegroundColour::PINK);
-                        }
-                        TextForegroundColour::CYAN => {
-                            self.attr.set_fg(TextForegroundColour::LIGHT_CYAN);
-                        }
-                        TextForegroundColour::LIGHT_GRAY => {
-                            self.attr.set_fg(TextForegroundColour::WHITE);
-                        }
-                        _ => {
-                            // Do nothing
-                        }
-                    }
+                    self.attr.set_fg(self.attr.fg().brighten())
                 }
             }
             'A' => {
@@ -826,13 +811,20 @@ mod tests {
     ///
     /// Each glyph and attribute is printed like "xx yy", separated by "|" for
     /// each column, and "\n" for each row.
-    fn print_buffer(buffer: &[u8]) -> String {
+    fn print_buffer(buffer: &[u32]) -> String {
         use std::fmt::Write;
         let mut output = String::new();
         let mut pos = 0;
+        let base_ptr = buffer.as_ptr() as *const u8;
         for _r in 0..HEIGHT {
             for _c in 0..WIDTH {
-                write!(output, "{:02x} {:02x}|", buffer[pos], buffer[pos + 1]).unwrap();
+                write!(
+                    output,
+                    "{:02x} {:02x}|",
+                    unsafe { *base_ptr.add(pos) },
+                    unsafe { *base_ptr.add(pos + 1) }
+                )
+                .unwrap();
                 pos += 2;
             }
             writeln!(output).unwrap();
@@ -842,7 +834,7 @@ mod tests {
 
     #[test]
     fn basic_print() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"Hello\n");
         assert_eq!(
@@ -862,7 +854,7 @@ mod tests {
 
     #[test]
     fn cr_overprint() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"0\r1\n");
         // Second row
@@ -887,7 +879,7 @@ mod tests {
 
     #[test]
     fn scroll() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"0\n");
         console.write_bstr(b"1\n");
@@ -913,7 +905,7 @@ mod tests {
 
     #[test]
     fn home1() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[0;0H1\n");
@@ -936,7 +928,7 @@ mod tests {
 
     #[test]
     fn home2() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[1;1H1\n");
@@ -956,7 +948,7 @@ mod tests {
 
     #[test]
     fn home3() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[H1\n");
@@ -979,7 +971,7 @@ mod tests {
 
     #[test]
     fn movecursor() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 0 and replace it with a 1
         console.write_bstr(b"\x1b[2;2H1");
@@ -1001,7 +993,7 @@ mod tests {
 
     #[test]
     fn sgr_reset() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"\x1b[0m1");
         assert_eq!(
@@ -1021,7 +1013,7 @@ mod tests {
 
     #[test]
     fn sgr_backgrounds() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1058,7 +1050,7 @@ mod tests {
 
     #[test]
     fn sgr_foregrounds() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1095,7 +1087,7 @@ mod tests {
 
     #[test]
     fn sgr_bold() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1134,7 +1126,7 @@ mod tests {
 
     #[test]
     fn sgr_all_three() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
@@ -1166,7 +1158,7 @@ mod tests {
 
     #[test]
     fn cursor_up() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, print 0\n then go up a line and replace the 0 with a 1
         console.write_bstr(b"\x1b[H0\n\x1b[A1");
@@ -1232,7 +1224,7 @@ mod tests {
 
     #[test]
     fn cursor_down() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, go down 1 line, and print 0
         console.write_bstr(b"\x1b[H\x1b[B0");
@@ -1298,7 +1290,7 @@ mod tests {
 
     #[test]
     fn cursor_forward() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print .0.1.2..3
         console.write_bstr(b"\x1b[C0");
@@ -1320,7 +1312,7 @@ mod tests {
 
     #[test]
     fn cursor_backwards() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 123 then replace the 3 with a 4
         console.write_bstr(b"123\x1b[D4");
@@ -1378,7 +1370,7 @@ mod tests {
 
     #[test]
     fn cursor_next_line() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Go home, print xxx, go down 1 line, and print 0
         console.write_bstr(b"\x1b[Hxxx\x1b[E0");
@@ -1445,7 +1437,7 @@ mod tests {
 
     #[test]
     fn cursor_previous_line() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print xx, xx, 11, 22, 33, 456 on the first five lines
         // Then go back and replace 4 with 7, 3 with 8, 2 with 9 and the first x with 0
@@ -1468,7 +1460,7 @@ mod tests {
 
     #[test]
     fn cursor_horizontal_absolute() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // Print 12345 the replace the 3 with a 9
         console.write_bstr(b"12345\x1b[3G9");
@@ -1489,7 +1481,7 @@ mod tests {
 
     #[test]
     fn cursor_position() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         // In row;col form.
         console.write_bstr(b"xxx\x1b[H0\x1b[;3H1\x1b[2;H2\x1b[3;4H3");
@@ -1513,7 +1505,7 @@ mod tests {
 
     #[test]
     fn erase_in_display_cursor_to_end() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1536,7 +1528,7 @@ mod tests {
 
     #[test]
     fn erase_in_display_start_to_cursor() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1559,7 +1551,7 @@ mod tests {
 
     #[test]
     fn erase_in_display_entire_screen() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1582,7 +1574,7 @@ mod tests {
 
     #[test]
     fn erase_in_line_cursor_to_end() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1605,7 +1597,7 @@ mod tests {
 
     #[test]
     fn erase_in_line_start_to_cursor() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
@@ -1628,7 +1620,7 @@ mod tests {
 
     #[test]
     fn erase_in_line_entire_line() {
-        let mut buffer = [0u8; WIDTH * HEIGHT * 2];
+        let mut buffer = [0u32; WIDTH * HEIGHT / 2];
         let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
