@@ -2,15 +2,17 @@
 
 use pc_keyboard::DecodedKey;
 
-static SLIDES: [&[u8]; 8] = [
+static SLIDES: [&[u8]; 10] = [
     include_bytes!("../slide_pico_vga.bmp"),
     include_bytes!("../slide_pico_audio.bmp"),
     include_bytes!("../slide_bios.bmp"),
     include_bytes!("../slide_os.bmp"),
     include_bytes!("../slide_oss.bmp"),
-    include_bytes!("../slide_links.bmp"),
+    include_bytes!("../slide_sdk.bmp"),
     include_bytes!("../slide_stars.bmp"),
     include_bytes!("../slide_px3.bmp"),
+    include_bytes!("../slide_pi.bmp"),
+    include_bytes!("../slide_win30.bmp"),
 ];
 
 use crate::{
@@ -235,8 +237,8 @@ fn demo_cmd(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ct
     let api = crate::API.get();
     let old_mode = (api.video_get_mode)();
     let old_ptr = (api.video_get_framebuffer)();
-    let buffer = ctx.tpa.as_slice_u8();
-    let buffer_ptr = buffer.as_mut_ptr() as *mut u32;
+    let buffer = ctx.tpa.as_slice_u32();
+    let buffer_ptr = buffer.as_mut_ptr();
     let old_palette = [
         (api.video_get_palette)(0),
         (api.video_get_palette)(1),
@@ -251,12 +253,12 @@ fn demo_cmd(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ct
     }
 
     'slides: for slide_bytes in SLIDES.iter().cycle().cloned() {
-        if let Err(_e) = show_slide(slide_bytes, api, buffer) {
+        if let Err(_e) = show_slide(slide_bytes, api, buffer_ptr) {
             break;
         }
         // Now wait for user input - Q to quit, ' ' to skip
-        'wait: for _ in 0..300 {
-            // 300 frames = 5 seconds
+        'wait: for _ in 0..450 {
+            // 450 frames = 7.5 seconds
             (api.video_wait_for_line)(478);
             (api.video_wait_for_line)(479);
             let keyin = crate::STD_INPUT.lock().get_raw();
@@ -287,7 +289,7 @@ enum SlideError {
 fn show_slide(
     data: &[u8],
     api: &neotron_common_bios::Api,
-    buffer: &mut [u8],
+    buffer: *mut u32,
 ) -> Result<(), SlideError> {
     use embedded_graphics::pixelcolor::RgbColor;
 
@@ -309,21 +311,21 @@ fn show_slide(
     }
 
     // Copy bitmap
+    let mut pixel_word = 0;
     for px in raw_bmp.pixels() {
         let offset_px = (px.position.y * 640) + px.position.x;
-        let offset_byte = (offset_px / 4) as usize;
-        match offset_px % 4 {
-            0 => {
-                buffer[offset_byte] = (px.color << 6) as u8;
-            }
-            1 => {
-                buffer[offset_byte] |= (px.color << 4) as u8;
-            }
-            2 => {
-                buffer[offset_byte] |= (px.color << 2) as u8;
-            }
-            _ => {
-                buffer[offset_byte] |= px.color as u8;
+        let offset_word = (offset_px / 16) as usize;
+        let shift = 30 - ((offset_px % 16) * 2);
+        if shift == 30 {
+            pixel_word = 0;
+        } else {
+            pixel_word <<= 2;
+        }
+        pixel_word |= px.color & 0x03;
+        if shift == 0 {
+            pixel_word = pixel_word.to_be();
+            unsafe {
+                buffer.add(offset_word).write_volatile(pixel_word);
             }
         }
     }
