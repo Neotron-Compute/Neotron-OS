@@ -1,6 +1,8 @@
 //! Program Loading and Execution
 
-use crate::{fs, osprintln, refcell::CsRefCell, FILESYSTEM};
+use neotron_api::FfiByteSlice;
+
+use crate::{fs, osprintln, refcell::CsRefCell, API, FILESYSTEM};
 
 #[allow(unused)]
 static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
@@ -41,6 +43,8 @@ pub enum OpenHandle {
     ///
     /// This is the default state for handles.
     Closed,
+    /// Represents the audio device,
+    Audio,
 }
 
 /// The open handle table
@@ -334,6 +338,17 @@ impl TransientProgramArea {
     }
 }
 
+/// Store an open handle, or fail if we're out of space
+fn allocate_handle(h: OpenHandle) -> Result<usize, OpenHandle> {
+    for (idx, slot) in OPEN_HANDLES.lock().iter_mut().enumerate() {
+        if matches!(*slot, OpenHandle::Closed) {
+            *slot = h;
+            return Ok(idx);
+        }
+    }
+    Err(h)
+}
+
 /// Open a file, given a path as UTF-8 string.
 ///
 /// If the file does not exist, or is already open, it returns an error.
@@ -344,6 +359,19 @@ extern "C" fn api_open(
     path: neotron_api::FfiString,
     _flags: neotron_api::file::Flags,
 ) -> neotron_api::Result<neotron_api::file::Handle> {
+    // Check for special devices
+    if path.as_str().eq_ignore_ascii_case("AUDIO:") {
+        match allocate_handle(OpenHandle::Audio) {
+            Ok(n) => {
+                return neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8));
+            }
+            Err(_f) => {
+                return neotron_api::Result::Err(neotron_api::Error::OutOfMemory);
+            }
+        }
+    }
+
+    // OK, let's assume it's a file relative to the root of our one and only volume
     let f = match FILESYSTEM.open_file(path.as_str(), embedded_sdmmc::Mode::ReadOnly) {
         Ok(f) => f,
         Err(fs::Error::Io(embedded_sdmmc::Error::NotFound)) => {
@@ -355,19 +383,9 @@ extern "C" fn api_open(
     };
 
     // 1. Put the file into the open handles array and get the index (or return an error)
-    let mut result = None;
-    for (idx, slot) in OPEN_HANDLES.lock().iter_mut().enumerate() {
-        if matches!(*slot, OpenHandle::Closed) {
-            result = Some(idx);
-            *slot = OpenHandle::File(f);
-            break;
-        }
-    }
-
-    // 2. give the caller the index into the open handles array
-    match result {
-        Some(n) => neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8)),
-        None => neotron_api::Result::Err(neotron_api::Error::OutOfMemory),
+    match allocate_handle(OpenHandle::File(f)) {
+        Ok(n) => neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8)),
+        Err(_f) => neotron_api::Result::Err(neotron_api::Error::OutOfMemory),
     }
 }
 
@@ -391,8 +409,11 @@ extern "C" fn api_write(
     buffer: neotron_api::FfiByteSlice,
 ) -> neotron_api::Result<()> {
     let mut open_handles = OPEN_HANDLES.lock();
-    match open_handles.get_mut(fd.value() as usize) {
-        Some(OpenHandle::StdErr | OpenHandle::Stdout) => {
+    let Some(h) = open_handles.get_mut(fd.value() as usize) else {
+        return neotron_api::Result::Err(neotron_api::Error::BadHandle);
+    };
+    match h {
+        OpenHandle::StdErr | OpenHandle::Stdout => {
             // Treat stderr and stdout the same
             let mut guard = crate::VGA_CONSOLE.lock();
             if let Some(console) = guard.as_mut() {
@@ -405,11 +426,27 @@ extern "C" fn api_write(
             }
             neotron_api::Result::Ok(())
         }
-        Some(OpenHandle::File(f)) => match f.write(buffer.as_slice()) {
+        OpenHandle::File(f) => match f.write(buffer.as_slice()) {
             Ok(_) => neotron_api::Result::Ok(()),
             Err(_e) => neotron_api::Result::Err(neotron_api::Error::DeviceSpecific),
         },
-        Some(OpenHandle::StdIn | OpenHandle::Closed) | None => {
+        OpenHandle::Audio => {
+            let api = API.get();
+            let mut slice = buffer.as_slice();
+            // loop until we've sent all of it
+            while !slice.is_empty() {
+                let result = unsafe { (api.audio_output_data)(FfiByteSlice::new(slice)) };
+                let this_time = match result {
+                    neotron_common_bios::FfiResult::Ok(n) => n,
+                    neotron_common_bios::FfiResult::Err(_e) => {
+                        return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+                    }
+                };
+                slice = &slice[this_time..];
+            }
+            neotron_api::Result::Ok(())
+        }
+        OpenHandle::StdIn | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
         }
     }
@@ -423,8 +460,11 @@ extern "C" fn api_read(
     mut buffer: neotron_api::FfiBuffer,
 ) -> neotron_api::Result<usize> {
     let mut open_handles = OPEN_HANDLES.lock();
-    match open_handles.get_mut(fd.value() as usize) {
-        Some(OpenHandle::StdIn) => {
+    let Some(h) = open_handles.get_mut(fd.value() as usize) else {
+        return neotron_api::Result::Err(neotron_api::Error::BadHandle);
+    };
+    match h {
+        OpenHandle::StdIn => {
             if let Some(buffer) = buffer.as_mut_slice() {
                 let count = { crate::STD_INPUT.lock().get_data(buffer) };
                 Ok(count).into()
@@ -432,7 +472,7 @@ extern "C" fn api_read(
                 neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
             }
         }
-        Some(OpenHandle::File(f)) => {
+        OpenHandle::File(f) => {
             let Some(buffer) = buffer.as_mut_slice() else {
                 return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
             };
@@ -441,7 +481,17 @@ extern "C" fn api_read(
                 Err(_e) => neotron_api::Result::Err(neotron_api::Error::DeviceSpecific),
             }
         }
-        Some(OpenHandle::Stdout | OpenHandle::StdErr | OpenHandle::Closed) | None => {
+        OpenHandle::Audio => {
+            let api = API.get();
+            let result = unsafe { (api.audio_input_data)(buffer) };
+            match result {
+                neotron_common_bios::FfiResult::Ok(n) => neotron_api::Result::Ok(n),
+                neotron_common_bios::FfiResult::Err(_e) => {
+                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+                }
+            }
+        }
+        OpenHandle::Stdout | OpenHandle::StdErr | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
         }
     }
@@ -483,12 +533,84 @@ extern "C" fn api_rename(
 }
 
 /// Perform a special I/O control operation.
+///
+/// # Audio Devices
+///
+/// * `0` - get output sample rate/format (0xN000_0000_<sample_rate_u32>) where N indicates the sample format
+///     * N = 0 => Eight bit mono, one byte per sample
+///     * N = 1 => Eight bit stereo, two byte per samples
+///     * N = 2 => Sixteen bit mono, two byte per samples
+///     * N = 3 => Sixteen bit stereo, four byte per samples
+/// * `1` - set output sample rate/format
+///     * As above
+/// * `2` - get output sample space available
+///     * Gets a value in bytes
 extern "C" fn api_ioctl(
-    _fd: neotron_api::file::Handle,
-    _command: u64,
-    _value: u64,
+    fd: neotron_api::file::Handle,
+    command: u64,
+    value: u64,
 ) -> neotron_api::Result<u64> {
-    neotron_api::Result::Err(neotron_api::Error::Unimplemented)
+    let mut open_handles = OPEN_HANDLES.lock();
+    let Some(h) = open_handles.get_mut(fd.value() as usize) else {
+        return neotron_api::Result::Err(neotron_api::Error::BadHandle);
+    };
+    let api = API.get();
+    match (h, command) {
+        (OpenHandle::Audio, 0) => {
+            // Getting sample rate
+            let neotron_common_bios::FfiResult::Ok(config) = (api.audio_output_get_config)() else {
+                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+            };
+            let mut result: u64 = config.sample_rate_hz as u64;
+            let nibble = match config.sample_format.make_safe() {
+                Ok(neotron_common_bios::audio::SampleFormat::EightBitMono) => 0,
+                Ok(neotron_common_bios::audio::SampleFormat::EightBitStereo) => 1,
+                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitMono) => 2,
+                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitStereo) => 3,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+                }
+            };
+            result |= nibble << 60;
+            neotron_api::Result::Ok(result)
+        }
+        (OpenHandle::Audio, 1) => {
+            // Setting sample rate
+            let sample_rate = value as u32;
+            let format = match value >> 60 {
+                0 => neotron_common_bios::audio::SampleFormat::EightBitMono,
+                1 => neotron_common_bios::audio::SampleFormat::EightBitStereo,
+                2 => neotron_common_bios::audio::SampleFormat::SixteenBitMono,
+                3 => neotron_common_bios::audio::SampleFormat::SixteenBitStereo,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+                }
+            };
+            let config = neotron_common_bios::audio::Config {
+                sample_format: format.make_ffi_safe(),
+                sample_rate_hz: sample_rate,
+            };
+            match (api.audio_output_set_config)(config) {
+                neotron_common_bios::FfiResult::Ok(_) => {
+                    osprintln!("audio {}, {:?}", sample_rate, format);
+                    neotron_api::Result::Ok(0)
+                }
+                neotron_common_bios::FfiResult::Err(_) => {
+                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+                }
+            }
+        }
+        (OpenHandle::Audio, 2) => {
+            // Setting sample space
+            match (api.audio_output_get_space)() {
+                neotron_common_bios::FfiResult::Ok(n) => neotron_api::Result::Ok(n as u64),
+                neotron_common_bios::FfiResult::Err(_) => {
+                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+                }
+            }
+        }
+        _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
+    }
 }
 
 /// Open a directory, given a path as a UTF-8 string.
