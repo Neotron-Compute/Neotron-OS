@@ -1,6 +1,6 @@
 //! Program Loading and Execution
 
-use crate::{osprint, osprintln, FILESYSTEM};
+use crate::{osprintln, FILESYSTEM};
 
 #[allow(unused)]
 static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
@@ -230,15 +230,23 @@ impl TransientProgramArea {
     /// an exit code that is non-zero is not considered a failure from the point
     /// of view of this API. You wanted to run a program, and the program was
     /// run.
-    pub fn execute(&mut self) -> Result<i32, Error> {
+    pub fn execute(&mut self, args: &[&str]) -> Result<i32, Error> {
         if self.last_entry == 0 {
             return Err(Error::NothingLoaded);
         }
 
+        // We support a maximum of four arguments.
+        let ffi_args = [
+            neotron_api::FfiString::new(args.get(0).unwrap_or(&"")),
+            neotron_api::FfiString::new(args.get(1).unwrap_or(&"")),
+            neotron_api::FfiString::new(args.get(2).unwrap_or(&"")),
+            neotron_api::FfiString::new(args.get(3).unwrap_or(&"")),
+        ];
+
         let result = unsafe {
-            let code: extern "C" fn(*const neotron_api::Api) -> i32 =
+            let code: neotron_api::AppStartFn =
                 ::core::mem::transmute(self.last_entry as *const ());
-            code(&CALLBACK_TABLE)
+            code(&CALLBACK_TABLE, args.len(), ffi_args.as_ptr())
         };
 
         self.last_entry = 0;
@@ -275,17 +283,6 @@ impl TransientProgramArea {
     pub unsafe fn restore_top(&mut self, size: usize) {
         let restored_words = (size + 3) / 4;
         self.memory_top = self.memory_top.add(restored_words);
-    }
-}
-
-/// Application API to print things to the console.
-#[allow(unused)]
-extern "C" fn print_fn(data: *const u8, len: usize) {
-    let slice = unsafe { core::slice::from_raw_parts(data, len) };
-    if let Ok(s) = core::str::from_utf8(slice) {
-        osprint!("{}", s);
-    } else {
-        // Ignore App output - not UTF-8
     }
 }
 
