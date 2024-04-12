@@ -1,6 +1,6 @@
 //! Program Loading and Execution
 
-use crate::{osprintln, FILESYSTEM};
+use crate::{fs, osprintln, refcell::CsRefCell, FILESYSTEM};
 
 #[allow(unused)]
 static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
@@ -26,6 +26,41 @@ static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
     malloc: api_malloc,
     free: api_free,
 };
+
+/// The different kinds of state each open handle can be in
+pub enum OpenHandle {
+    /// Represents Standard Input
+    StdIn,
+    /// Represents Standard Output
+    Stdout,
+    /// Represents Standard Error
+    StdErr,
+    /// Represents an open file in the filesystem
+    File(fs::File),
+    /// Represents a closed handle.
+    ///
+    /// This is the default state for handles.
+    Closed,
+}
+
+/// The open handle table
+///
+/// This is indexed by the file descriptors (or handles) that the application
+/// uses. When an application says "write to handle 4", we look at the 4th entry
+/// in here to work out what they are writing to.
+///
+/// The table is initialised when a program is started, and any open files are
+/// closed when the program ends.
+static OPEN_HANDLES: CsRefCell<[OpenHandle; 8]> = CsRefCell::new([
+    OpenHandle::Closed,
+    OpenHandle::Closed,
+    OpenHandle::Closed,
+    OpenHandle::Closed,
+    OpenHandle::Closed,
+    OpenHandle::Closed,
+    OpenHandle::Closed,
+    OpenHandle::Closed,
+]);
 
 /// Ways in which loading a program can fail.
 #[derive(Debug)]
@@ -71,7 +106,6 @@ impl FileSource {
     }
 
     fn uncached_read(&self, offset: u32, out_buffer: &mut [u8]) -> Result<(), crate::fs::Error> {
-        osprintln!("Reading from {}", offset);
         self.file.seek_from_start(offset)?;
         self.file.read(out_buffer)?;
         Ok(())
@@ -96,7 +130,6 @@ impl neotron_loader::traits::Source for &FileSource {
                 }
             }
 
-            osprintln!("Reading from {}", offset);
             self.file.seek_from_start(offset)?;
             self.file.read(self.buffer.borrow_mut().as_mut_slice())?;
             self.offset_cached.set(Some(offset));
@@ -235,7 +268,15 @@ impl TransientProgramArea {
             return Err(Error::NothingLoaded);
         }
 
+        // Setup the default file handles
+        let mut open_handles = OPEN_HANDLES.lock();
+        open_handles[0] = OpenHandle::StdIn;
+        open_handles[1] = OpenHandle::Stdout;
+        open_handles[2] = OpenHandle::StdErr;
+        drop(open_handles);
+
         // We support a maximum of four arguments.
+        #[allow(clippy::get_first)]
         let ffi_args = [
             neotron_api::FfiString::new(args.get(0).unwrap_or(&"")),
             neotron_api::FfiString::new(args.get(1).unwrap_or(&"")),
@@ -248,6 +289,13 @@ impl TransientProgramArea {
                 ::core::mem::transmute(self.last_entry as *const ());
             code(&CALLBACK_TABLE, args.len(), ffi_args.as_ptr())
         };
+
+        // Close any files the program left open
+        let mut open_handles = OPEN_HANDLES.lock();
+        for h in open_handles.iter_mut() {
+            *h = OpenHandle::Closed;
+        }
+        drop(open_handles);
 
         self.last_entry = 0;
         Ok(result)
@@ -293,15 +341,46 @@ impl TransientProgramArea {
 /// Path may be relative to current directory, or it may be an absolute
 /// path.
 extern "C" fn api_open(
-    _path: neotron_api::FfiString,
+    path: neotron_api::FfiString,
     _flags: neotron_api::file::Flags,
 ) -> neotron_api::Result<neotron_api::file::Handle> {
-    neotron_api::Result::Err(neotron_api::Error::Unimplemented)
+    let f = match FILESYSTEM.open_file(path.as_str(), embedded_sdmmc::Mode::ReadOnly) {
+        Ok(f) => f,
+        Err(fs::Error::Io(embedded_sdmmc::Error::NotFound)) => {
+            return neotron_api::Result::Err(neotron_api::Error::InvalidPath);
+        }
+        Err(_e) => {
+            return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+        }
+    };
+
+    // 1. Put the file into the open handles array and get the index (or return an error)
+    let mut result = None;
+    for (idx, slot) in OPEN_HANDLES.lock().iter_mut().enumerate() {
+        if matches!(*slot, OpenHandle::Closed) {
+            result = Some(idx);
+            *slot = OpenHandle::File(f);
+            break;
+        }
+    }
+
+    // 2. give the caller the index into the open handles array
+    match result {
+        Some(n) => neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8)),
+        None => neotron_api::Result::Err(neotron_api::Error::OutOfMemory),
+    }
 }
 
 /// Close a previously opened file.
-extern "C" fn api_close(_fd: neotron_api::file::Handle) -> neotron_api::Result<()> {
-    neotron_api::Result::Err(neotron_api::Error::Unimplemented)
+extern "C" fn api_close(fd: neotron_api::file::Handle) -> neotron_api::Result<()> {
+    let mut open_handles = OPEN_HANDLES.lock();
+    match open_handles.get_mut(fd.value() as usize) {
+        Some(h) => {
+            *h = OpenHandle::Closed;
+            neotron_api::Result::Ok(())
+        }
+        None => neotron_api::Result::Err(neotron_api::Error::BadHandle),
+    }
 }
 
 /// Write to an open file handle, blocking until everything is written.
@@ -311,19 +390,28 @@ extern "C" fn api_write(
     fd: neotron_api::file::Handle,
     buffer: neotron_api::FfiByteSlice,
 ) -> neotron_api::Result<()> {
-    if fd == neotron_api::file::Handle::new_stdout() {
-        let mut guard = crate::VGA_CONSOLE.lock();
-        if let Some(console) = guard.as_mut() {
-            console.write_bstr(buffer.as_slice());
+    let mut open_handles = OPEN_HANDLES.lock();
+    match open_handles.get_mut(fd.value() as usize) {
+        Some(OpenHandle::StdErr | OpenHandle::Stdout) => {
+            // Treat stderr and stdout the same
+            let mut guard = crate::VGA_CONSOLE.lock();
+            if let Some(console) = guard.as_mut() {
+                console.write_bstr(buffer.as_slice());
+            }
+            let mut guard = crate::SERIAL_CONSOLE.lock();
+            if let Some(console) = guard.as_mut() {
+                // Ignore serial errors on stdout
+                let _ = console.write_bstr(buffer.as_slice());
+            }
+            neotron_api::Result::Ok(())
         }
-        let mut guard = crate::SERIAL_CONSOLE.lock();
-        if let Some(console) = guard.as_mut() {
-            // Ignore serial errors on stdout
-            let _ = console.write_bstr(buffer.as_slice());
+        Some(OpenHandle::File(f)) => match f.write(buffer.as_slice()) {
+            Ok(_) => neotron_api::Result::Ok(()),
+            Err(_e) => neotron_api::Result::Err(neotron_api::Error::DeviceSpecific),
+        },
+        Some(OpenHandle::StdIn | OpenHandle::Closed) | None => {
+            neotron_api::Result::Err(neotron_api::Error::BadHandle)
         }
-        neotron_api::Result::Ok(())
-    } else {
-        neotron_api::Result::Err(neotron_api::Error::BadHandle)
     }
 }
 
@@ -334,15 +422,28 @@ extern "C" fn api_read(
     fd: neotron_api::file::Handle,
     mut buffer: neotron_api::FfiBuffer,
 ) -> neotron_api::Result<usize> {
-    if fd == neotron_api::file::Handle::new_stdin() {
-        if let Some(buffer) = buffer.as_mut_slice() {
-            let count = { crate::STD_INPUT.lock().get_data(buffer) };
-            Ok(count).into()
-        } else {
-            neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+    let mut open_handles = OPEN_HANDLES.lock();
+    match open_handles.get_mut(fd.value() as usize) {
+        Some(OpenHandle::StdIn) => {
+            if let Some(buffer) = buffer.as_mut_slice() {
+                let count = { crate::STD_INPUT.lock().get_data(buffer) };
+                Ok(count).into()
+            } else {
+                neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+            }
         }
-    } else {
-        neotron_api::Result::Err(neotron_api::Error::BadHandle)
+        Some(OpenHandle::File(f)) => {
+            let Some(buffer) = buffer.as_mut_slice() else {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            };
+            match f.read(buffer) {
+                Ok(n) => neotron_api::Result::Ok(n),
+                Err(_e) => neotron_api::Result::Err(neotron_api::Error::DeviceSpecific),
+            }
+        }
+        Some(OpenHandle::Stdout | OpenHandle::StdErr | OpenHandle::Closed) | None => {
+            neotron_api::Result::Err(neotron_api::Error::BadHandle)
+        }
     }
 }
 
@@ -418,9 +519,35 @@ extern "C" fn api_stat(
 
 /// Get information about an open file
 extern "C" fn api_fstat(
-    _fd: neotron_api::file::Handle,
+    fd: neotron_api::file::Handle,
 ) -> neotron_api::Result<neotron_api::file::Stat> {
-    neotron_api::Result::Err(neotron_api::Error::Unimplemented)
+    let mut open_handles = OPEN_HANDLES.lock();
+    match open_handles.get_mut(fd.value() as usize) {
+        Some(OpenHandle::File(f)) => {
+            let stat = neotron_api::file::Stat {
+                file_size: f.length() as u64,
+                ctime: neotron_api::file::Time {
+                    year_since_1970: 0,
+                    zero_indexed_month: 0,
+                    zero_indexed_day: 0,
+                    hours: 0,
+                    minutes: 0,
+                    seconds: 0,
+                },
+                mtime: neotron_api::file::Time {
+                    year_since_1970: 0,
+                    zero_indexed_month: 0,
+                    zero_indexed_day: 0,
+                    hours: 0,
+                    minutes: 0,
+                    seconds: 0,
+                },
+                attr: neotron_api::file::Attributes::empty(),
+            };
+            neotron_api::Result::Ok(stat)
+        }
+        _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
+    }
 }
 
 /// Delete a file.
