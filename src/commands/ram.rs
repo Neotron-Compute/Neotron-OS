@@ -24,10 +24,27 @@ pub static HEXDUMP_ITEM: menu::Item<Ctx> = menu::Item {
 pub static RUN_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
         function: run,
-        parameters: &[],
+        parameters: &[
+            menu::Parameter::Optional {
+                parameter_name: "arg1",
+                help: None,
+            },
+            menu::Parameter::Optional {
+                parameter_name: "arg2",
+                help: None,
+            },
+            menu::Parameter::Optional {
+                parameter_name: "arg3",
+                help: None,
+            },
+            menu::Parameter::Optional {
+                parameter_name: "arg4",
+                help: None,
+            },
+        ],
     },
     command: "run",
-    help: Some("Jump to start of application area"),
+    help: Some("Run a program (with up to four arguments)"),
 };
 
 pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
@@ -90,8 +107,8 @@ fn hexdump(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], _ctx
 }
 
 /// Called when the "run" command is executed.
-fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
-    match ctx.tpa.execute() {
+fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
+    match ctx.tpa.execute(args) {
         Ok(0) => {
             osprintln!();
         }
