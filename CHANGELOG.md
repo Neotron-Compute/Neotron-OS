@@ -1,8 +1,16 @@
 # Change Log
 
-## Unreleased changes ([Source](https://github.com/neotron-compute/neotron-os/tree/develop) | [Changes](https://github.com/neotron-compute/neotron-os/compare/v0.7.1...develop))
+## Unreleased changes ([Source](https://github.com/neotron-compute/neotron-os/tree/develop) | [Changes](https://github.com/neotron-compute/neotron-os/compare/v0.8.0...develop))
 
 * None
+
+## v0.8.0 - 2024-04-11 ([Source](https://github.com/neotron-compute/neotron-os/tree/v0.8.0) | [Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.8.0))
+
+* Added a global `FILESYSTEM` object
+* Updated to embedded-sdmmc 0.7
+* Updated to Neotron Common BIOS 0.12
+* Add a bitmap viewer command - `gfx`
+* Treat text buffer as 32-bit values
 
 ## v0.7.1 - 2023-10-21 ([Source](https://github.com/neotron-compute/neotron-os/tree/v0.7.1) | [Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.7.1))
 
