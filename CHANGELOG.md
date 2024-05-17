@@ -1,8 +1,16 @@
 # Change Log
 
-## Unreleased changes ([Source](https://github.com/neotron-compute/neotron-os/tree/develop) | [Changes](https://github.com/neotron-compute/neotron-os/compare/v0.8.0...develop))
+## Unreleased changes ([Source](https://github.com/neotron-compute/neotron-os/tree/develop) | [Changes](https://github.com/neotron-compute/neotron-os/compare/v0.8.1...develop))
 
 * None
+
+## v0.8.1 - 2024-05-17 ([Source](https://github.com/neotron-compute/neotron-os/tree/v0.8.1) | [Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.8.1))
+
+* The `run` command now takes command-line arguments
+* Add `ioctl` API
+* Updated to `neotron-api` v0.2, to provide support for both of the above
+* Add `AUDIO:` device, including `ioctl` to get/set sample rate and get buffer space
+* Implement `fstat` for files (although only file size works)
 
 ## v0.8.0 - 2024-04-11 ([Source](https://github.com/neotron-compute/neotron-os/tree/v0.8.0) | [Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.8.0))
 

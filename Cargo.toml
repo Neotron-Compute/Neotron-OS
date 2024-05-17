@@ -1,6 +1,6 @@
 [package]
 name = "neotron-os"
-version = "0.8.0"
+version = "0.8.1"
 authors = [
     "Jonathan 'theJPster' Pallant <github@thejpster.org.uk>",
     "The Neotron Developers"
@@ -45,7 +45,7 @@ chrono = { version = "0.4", default-features = false }
 embedded-sdmmc = { version = "0.7", default-features = false }
 heapless = "0.7"
 menu = "0.3"
-neotron-api = "0.1"
+neotron-api = "0.2"
 neotron-common-bios = "0.12.0"
 neotron-loader = "0.1"
 pc-keyboard = "0.7"

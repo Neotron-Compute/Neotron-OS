@@ -121,9 +121,9 @@ checksum = "b03d7f798bfe97329ad6df937951142eec93886b37d87010502dd25e8cc75fd5"
 
 [[package]]
 name = "neotron-api"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82c00f842e7006421002e67a53866b90ddd6f7d86137b52d2147f5e38b35e82f"
+checksum = "67d6c96706b6f3ec069abfb042cadfd2d701980fa4940f407c0bc28ee1e1c493"
 dependencies = [
  "bitflags",
  "neotron-ffi",
@@ -154,7 +154,7 @@ checksum = "b9b8634a088b9d5b338a96b3f6ef45a3bc0b9c0f0d562c7d00e498265fd96e8f"
 
 [[package]]
 name = "neotron-os"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "chrono",
  "embedded-sdmmc",

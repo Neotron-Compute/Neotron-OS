@@ -110,6 +110,11 @@ impl File {
         FILESYSTEM.file_read(self, buffer)
     }
 
+    /// Write to a file
+    pub fn write(&self, buffer: &[u8]) -> Result<(), Error> {
+        FILESYSTEM.file_write(self, buffer)
+    }
+
     /// Are we at the end of the file
     pub fn is_eof(&self) -> bool {
         FILESYSTEM
@@ -200,6 +205,17 @@ impl Filesystem {
         let fs = fs.as_mut().unwrap();
         let bytes_read = fs.read(file.inner, buffer)?;
         Ok(bytes_read)
+    }
+
+    /// Write to an open file
+    pub fn file_write(&self, file: &File, buffer: &[u8]) -> Result<(), Error> {
+        let mut fs = self.volume_manager.lock();
+        if fs.is_none() {
+            *fs = Some(embedded_sdmmc::VolumeManager::new(BiosBlock(), BiosTime()));
+        }
+        let fs = fs.as_mut().unwrap();
+        fs.write(file.inner, buffer)?;
+        Ok(())
     }
 
     /// How large is a file?
