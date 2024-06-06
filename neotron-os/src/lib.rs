@@ -61,6 +61,12 @@ static STD_INPUT: CsRefCell<StdInput> = CsRefCell::new(StdInput::new());
 
 static FILESYSTEM: fs::Filesystem = fs::Filesystem::new();
 
+#[cfg(romfs_enabled = "yes")]
+static ROMFS: &'static [u8] = include_bytes!(env!("ROMFS_PATH"));
+
+#[cfg(not(romfs_enabled = "yes"))]
+static ROMFS: &'static [u8] = &[];
+
 // ===========================================================================
 // Macros
 // ===========================================================================
@@ -124,16 +130,19 @@ impl Api {
         let bios_time = (api.time_clock_get)();
         let secs = i64::from(bios_time.secs) + SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH;
         let nsecs = bios_time.nsecs;
-        chrono::NaiveDateTime::from_timestamp_opt(secs, nsecs).unwrap()
+        chrono::DateTime::from_timestamp(secs, nsecs)
+            .unwrap()
+            .naive_utc()
     }
 
     /// Set the current time
     fn set_time(&self, timestamp: chrono::NaiveDateTime) {
         let api = self.get();
-        let nanos = timestamp.timestamp_nanos();
+        let seconds = timestamp.and_utc().timestamp();
+        let nanos = timestamp.and_utc().timestamp_subsec_nanos();
         let bios_time = bios::Time {
-            secs: ((nanos / 1_000_000_000) - SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH) as u32,
-            nsecs: (nanos % 1_000_000_000) as u32,
+            secs: (seconds - SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH) as u32,
+            nsecs: nanos,
         };
         (api.time_clock_set)(bios_time);
     }
@@ -347,6 +356,8 @@ impl core::fmt::Write for Ctx {
 /// (as it doesn't know where they are).
 #[cfg(all(target_os = "none", not(feature = "lib-mode")))]
 unsafe fn start_up_init() {
+    use core::ptr::{addr_of, addr_of_mut};
+
     extern "C" {
 
         // These symbols come from `link.x`
@@ -358,8 +369,12 @@ unsafe fn start_up_init() {
         static __sidata: u32;
     }
 
-    r0::zero_bss(&mut __sbss, &mut __ebss);
-    r0::init_data(&mut __sdata, &mut __edata, &__sidata);
+    r0::zero_bss(addr_of_mut!(__sbss), addr_of_mut!(__ebss));
+    r0::init_data(
+        addr_of_mut!(__sdata),
+        addr_of_mut!(__edata),
+        addr_of!(__sidata),
+    );
 }
 
 #[cfg(any(not(target_os = "none"), feature = "lib-mode"))]

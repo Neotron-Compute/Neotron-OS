@@ -1,0 +1,12 @@
+[package]
+name = "flames"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Jonathan 'theJPster' Pallant <neotron@thejpster.org.uk>"]
+description = "ANSI Flames for Neotron systems"
+
+[dependencies]
+neotron-sdk = { workspace = true }
+
+# See workspace for profile settings

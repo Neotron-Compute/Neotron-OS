@@ -69,12 +69,12 @@ static OPEN_HANDLES: CsRefCell<[OpenHandle; 8]> = CsRefCell::new([
 /// Ways in which loading a program can fail.
 #[derive(Debug)]
 pub enum Error {
-    /// The file was too large for RAM.
-    ProgramTooLarge,
     /// A filesystem error occurred
     Filesystem(crate::fs::Error),
-    /// An ELF error occurred
-    Elf(neotron_loader::Error<crate::fs::Error>),
+    /// An ELF error occurred loading from disk
+    ElfFs(neotron_loader::Error<crate::fs::Error>),
+    /// An ELF error occurred loading from ROM
+    ElfRom(neotron_loader::Error<neotron_loader::traits::SliceError>),
     /// Tried to run when nothing was loaded
     NothingLoaded,
 }
@@ -87,7 +87,13 @@ impl From<crate::fs::Error> for Error {
 
 impl From<neotron_loader::Error<crate::fs::Error>> for Error {
     fn from(value: neotron_loader::Error<crate::fs::Error>) -> Self {
-        Error::Elf(value)
+        Error::ElfFs(value)
+    }
+}
+
+impl From<neotron_loader::Error<neotron_loader::traits::SliceError>> for Error {
+    fn from(value: neotron_loader::Error<neotron_loader::traits::SliceError>) -> Self {
+        Error::ElfRom(value)
     }
 }
 
@@ -175,7 +181,7 @@ impl TransientProgramArea {
         // points to, as the linker can only invent symbols pointing at
         // addresses; it cannot actually put values in RAM.
         #[cfg(all(target_os = "none", target_arch = "arm"))]
-        let official_tpa_start: Option<*mut u32> = Some((&mut _tpa_start) as *mut u32);
+        let official_tpa_start: Option<*mut u32> = Some(core::ptr::addr_of_mut!(_tpa_start));
 
         #[cfg(not(all(target_os = "none", target_arch = "arm")))]
         let official_tpa_start: Option<*mut u32> = None;
@@ -248,16 +254,37 @@ impl TransientProgramArea {
         Ok(())
     }
 
-    /// Copy a program from memory into the Transient Program Area.
+    /// Loads a program from disk into the Transient Program Area.
     ///
     /// The program must be in the Neotron Executable format.
-    pub fn copy_program(&mut self, program: &[u8]) -> Result<(), Error> {
-        let application_ram = self.as_slice_u8();
-        if program.len() > application_ram.len() {
-            return Err(Error::ProgramTooLarge);
+    pub fn load_rom_program(&mut self, contents: &[u8]) -> Result<(), Error> {
+        let loader = neotron_loader::Loader::new(contents)?;
+
+        let mut iter = loader.iter_program_headers();
+        while let Some(Ok(ph)) = iter.next() {
+            if ph.p_vaddr() as *mut u32 >= self.memory_bottom
+                && ph.p_type() == neotron_loader::ProgramHeader::PT_LOAD
+            {
+                osprintln!("Loading {} bytes to 0x{:08x}", ph.p_memsz(), ph.p_vaddr());
+                let ram = unsafe {
+                    core::slice::from_raw_parts_mut(ph.p_vaddr() as *mut u8, ph.p_memsz() as usize)
+                };
+                // Zero all of it.
+                for b in ram.iter_mut() {
+                    *b = 0;
+                }
+                // Replace some of those zeros with bytes from disk.
+                if ph.p_filesz() != 0 {
+                    ram[0..ph.p_filesz() as usize].copy_from_slice(
+                        &contents[ph.p_offset() as usize
+                            ..(ph.p_offset() as usize + ph.p_filesz() as usize)],
+                    );
+                }
+            }
         }
-        let application_ram = &mut application_ram[0..program.len()];
-        application_ram.copy_from_slice(program);
+
+        self.last_entry = loader.e_entry();
+
         Ok(())
     }
 

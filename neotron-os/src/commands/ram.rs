@@ -47,24 +47,6 @@ pub static RUN_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Run a program (with up to four arguments)"),
 };
 
-pub static LOAD_ITEM: menu::Item<Ctx> = menu::Item {
-    item_type: menu::ItemType::Callback {
-        function: loadf,
-        parameters: &[
-            menu::Parameter::Mandatory {
-                parameter_name: "address",
-                help: Some("The address to load from"),
-            },
-            menu::Parameter::Mandatory {
-                parameter_name: "length",
-                help: Some("The number of bytes to load"),
-            },
-        ],
-    },
-    command: "loadf",
-    help: Some("Copy a program from ROM/RAM into the application area"),
-};
-
 /// Called when the "hexdump" command is executed.
 ///
 /// If you ask for an address that generates a HardFault, the OS will crash. So
@@ -117,40 +99,6 @@ fn run(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mu
         }
         Err(e) => {
             osprintln!("\nFailed to execute: {:?}", e);
-        }
-    }
-}
-
-/// Called when the "loadf" command is executed.
-///
-/// If you ask for an address that generates a HardFault, the OS will crash. So
-/// don't.
-fn loadf(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
-    let Some(address_str) = args.first() else {
-        osprintln!("No address");
-        return;
-    };
-    let Ok(address) = parse_usize(address_str) else {
-        osprintln!("Bad address");
-        return;
-    };
-    let Some(len_str) = args.get(1) else {
-        osprintln!("No length");
-        return;
-    };
-    let Ok(len) = parse_usize(len_str) else {
-        osprintln!("Bad length");
-        return;
-    };
-
-    let src_slice = unsafe { core::slice::from_raw_parts(address as *const u8, len) };
-
-    match ctx.tpa.copy_program(src_slice) {
-        Ok(_) => {
-            osprintln!("Ok");
-        }
-        Err(e) => {
-            osprintln!("Error: {:?}", e);
         }
     }
 }
