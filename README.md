@@ -65,6 +65,7 @@ If you want to include a ROMFS, you need to:
 ```bash
 cargo install neotron-romfs-lsfs
 cargo install neotron-romfs-mkfs
+cargo install cargo-binutils
 ```
 
 A bunch of utilities are supplied in the [`utilities`](./utilities/) folder. Build them all, and make a ROMFS image, then build the OS with the `ROMFS_PATH` environment variable set.
