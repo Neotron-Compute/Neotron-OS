@@ -47,6 +47,18 @@ pub static TYPE_ITEM: menu::Item<Ctx> = menu::Item {
     help: Some("Type a file to the console"),
 };
 
+pub static ROM_ITEM: menu::Item<Ctx> = menu::Item {
+    item_type: menu::ItemType::Callback {
+        function: romfn,
+        parameters: &[menu::Parameter::Optional {
+            parameter_name: "file",
+            help: Some("The ROM utility to run"),
+        }],
+    },
+    command: "rom",
+    help: Some("Run a program from ROM"),
+};
+
 /// Called when the "dir" command is executed.
 fn dir(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], _ctx: &mut Ctx) {
     fn work() -> Result<(), crate::fs::Error> {
@@ -108,11 +120,8 @@ fn load(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &m
         osprintln!("Need a filename");
         return;
     };
-    match ctx.tpa.load_program(filename) {
-        Ok(_) => {}
-        Err(e) => {
-            osprintln!("Error: {:?}", e);
-        }
+    if let Err(e) = ctx.tpa.load_program(filename) {
+        osprintln!("Error: {:?}", e);
     }
 }
 
@@ -171,6 +180,33 @@ fn typefn(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: 
         Ok(_) => {}
         Err(e) => {
             osprintln!("Error: {:?}", e);
+        }
+    }
+}
+
+/// Called when the "romfn" command is executed.
+fn romfn(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
+    let Ok(romfs) = neotron_romfs::RomFs::new(crate::ROMFS) else {
+        osprintln!("No ROM available");
+        return;
+    };
+    if let Some(arg) = args.get(0) {
+        let Some(entry) = romfs.find(arg) else {
+            osprintln!("Couldn't find {} in ROM", arg);
+            return;
+        };
+        if let Err(e) = ctx.tpa.load_rom_program(entry.contents) {
+            osprintln!("Error: {:?}", e);
+        }
+    } else {
+        for entry in romfs.into_iter() {
+            if let Ok(entry) = entry {
+                osprintln!(
+                    "{} ({} bytes)",
+                    entry.metadata.file_name,
+                    entry.metadata.file_size
+                );
+            }
         }
     }
 }

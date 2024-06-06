@@ -1,34 +1,12 @@
-[package]
-name = "neotron-os"
-version = "0.8.1"
-authors = [
-    "Jonathan 'theJPster' Pallant <github@thejpster.org.uk>",
-    "The Neotron Developers"
+[workspace]
+members = [
+    "neotron-os",
+    "utilities/flames",
 ]
-edition = "2018"
-description = "The Neotron Operating System"
-license = "GPL-3.0-or-later"
-readme = "README.md"
-repository = "https://github.com/neotron-compute/Neotron-OS"
+resolver = "2"
 
-[[bin]]
-name = "flash1002"
-test = false
-bench = false
-
-[[bin]]
-name = "flash0802"
-test = false
-bench = false
-
-[[bin]]
-name = "flash0002"
-test = false
-bench = false
-
-[lib]
-crate-type = ["rlib", "cdylib"]
-required-features = ["native-log"]
+[workspace.dependencies]
+neotron-sdk = "0.2.0"
 
 [profile.release]
 lto = true
@@ -40,19 +18,3 @@ panic = "abort"
 [profile.dev]
 panic = "abort"
 
-[dependencies]
-chrono = { version = "0.4", default-features = false }
-embedded-sdmmc = { version = "0.7", default-features = false }
-heapless = "0.7"
-menu = "0.3"
-neotron-api = "0.2"
-neotron-common-bios = "0.12.0"
-neotron-loader = "0.1"
-pc-keyboard = "0.7"
-postcard = "1.0"
-r0 = "1.0"
-serde = { version = "1.0", default-features = false }
-vte = "0.12"
-
-[features]
-lib-mode = []

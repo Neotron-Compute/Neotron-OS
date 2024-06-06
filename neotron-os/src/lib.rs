@@ -61,6 +61,12 @@ static STD_INPUT: CsRefCell<StdInput> = CsRefCell::new(StdInput::new());
 
 static FILESYSTEM: fs::Filesystem = fs::Filesystem::new();
 
+#[cfg(romfs_enabled = "yes")]
+static ROMFS: &'static [u8] = include_bytes!(env!("ROMFS_PATH"));
+
+#[cfg(not(romfs_enabled = "yes"))]
+static ROMFS: &'static [u8] = &[];
+
 // ===========================================================================
 // Macros
 // ===========================================================================

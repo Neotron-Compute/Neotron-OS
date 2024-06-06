@@ -60,6 +60,38 @@ $ ls ./target/debug/*.so
 ./target/debug/libneotron_os.so
 ```
 
+If you want to include a ROMFS, you need to:
+
+```bash
+cargo install --git https://github.com/neotron-compute/neotron-romfs.git neotron-romfs-lsfs
+cargo install --git https://github.com/neotron-compute/neotron-romfs.git neotron-romfs-mkfs
+```
+
+A bunch of utilities are supplied in the [`utilities`](./utilities/) folder. Build them all, and make a ROMFS image, then build the OS with the `ROMFS_PATH` environment variable set.
+
+```bash
+TGT=$(pwd)/target/thumbv6m-none-eabi/release
+cargo build --bin flames --target thumbv6m-none-eabi --release
+rust-strip ${TGT}/flames -o ${TGT}/flames.elf
+neotron-romfs-mkfs ${TGT}/flames.elf > ${TGT}/romfs.img
+ROMFS_PATH=${TGT}/romfs.img cargo build --bin flash1002 --target thumbv6m-none-eabi --release
+```
+
+The OS will then include the ROMFS image, which you can access with the `rom` command.
+
+```text
+> rom
+flames.elf (14212 bytes)
+> rom flames.elf
+Loading 4256 bytes to 0x20001000
+Loading 532 bytes to 0x200020a0
+Loading 4908 bytes to 0x200022b4
+> run
+*Program starts running**
+```
+
+A better UI for loading files from ROM is being planned (maybe we should have drive letters, and the ROM can be `R:`).
+
 ## Changelog
 
 See [`CHANGELOG.md`](./CHANGELOG.md)
