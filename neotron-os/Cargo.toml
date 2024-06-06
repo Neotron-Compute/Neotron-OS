@@ -38,7 +38,7 @@ menu = "0.3"
 neotron-api = "0.2"
 neotron-common-bios = "0.12.0"
 neotron-loader = "0.1"
-neotron-romfs = { path = "../../neotron-romfs/neotron-romfs" }
+neotron-romfs = { git = "https://github.com/neotron-compute/neotron-romfs.git" }
 pc-keyboard = "0.7"
 postcard = "1.0"
 r0 = "1.0"

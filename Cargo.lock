@@ -245,6 +245,7 @@ dependencies = [
 [[package]]
 name = "neotron-romfs"
 version = "1.0.0"
+source = "git+https://github.com/neotron-compute/neotron-romfs.git#00e48fbda68f595be65511c0d3add4210c914674"
 dependencies = [
  "neotron-api 0.1.0",
 ]
