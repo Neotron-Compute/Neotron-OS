@@ -63,8 +63,8 @@ $ ls ./target/debug/*.so
 If you want to include a ROMFS, you need to:
 
 ```bash
-cargo install --git https://github.com/neotron-compute/neotron-romfs.git neotron-romfs-lsfs
-cargo install --git https://github.com/neotron-compute/neotron-romfs.git neotron-romfs-mkfs
+cargo install neotron-romfs-lsfs
+cargo install neotron-romfs-mkfs
 ```
 
 A bunch of utilities are supplied in the [`utilities`](./utilities/) folder. Build them all, and make a ROMFS image, then build the OS with the `ROMFS_PATH` environment variable set.
