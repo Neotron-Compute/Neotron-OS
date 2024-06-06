@@ -38,8 +38,8 @@ jobs:
 
       - name: Install ROMFS tools
         run: |
-          cargo install --git https://github.com/neotron-compute/neotron-romfs.git neotron-romfs-lsfs
-          cargo install --git https://github.com/neotron-compute/neotron-romfs.git neotron-romfs-mkfs
+          cargo install neotron-romfs-lsfs
+          cargo install neotron-romfs-mkfs
 
       - name: Build
         run: |
