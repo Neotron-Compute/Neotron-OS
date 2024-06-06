@@ -130,16 +130,19 @@ impl Api {
         let bios_time = (api.time_clock_get)();
         let secs = i64::from(bios_time.secs) + SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH;
         let nsecs = bios_time.nsecs;
-        chrono::NaiveDateTime::from_timestamp_opt(secs, nsecs).unwrap()
+        chrono::DateTime::from_timestamp(secs, nsecs)
+            .unwrap()
+            .naive_utc()
     }
 
     /// Set the current time
     fn set_time(&self, timestamp: chrono::NaiveDateTime) {
         let api = self.get();
-        let nanos = timestamp.timestamp_nanos();
+        let seconds = timestamp.and_utc().timestamp();
+        let nanos = timestamp.and_utc().timestamp_subsec_nanos();
         let bios_time = bios::Time {
-            secs: ((nanos / 1_000_000_000) - SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH) as u32,
-            nsecs: (nanos % 1_000_000_000) as u32,
+            secs: (seconds - SECONDS_BETWEEN_UNIX_AND_NEOTRON_EPOCH) as u32,
+            nsecs: nanos,
         };
         (api.time_clock_set)(bios_time);
     }
