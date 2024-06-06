@@ -356,6 +356,8 @@ impl core::fmt::Write for Ctx {
 /// (as it doesn't know where they are).
 #[cfg(all(target_os = "none", not(feature = "lib-mode")))]
 unsafe fn start_up_init() {
+    use core::ptr::{addr_of, addr_of_mut};
+
     extern "C" {
 
         // These symbols come from `link.x`
@@ -367,8 +369,12 @@ unsafe fn start_up_init() {
         static __sidata: u32;
     }
 
-    r0::zero_bss(&mut __sbss, &mut __ebss);
-    r0::init_data(&mut __sdata, &mut __edata, &__sidata);
+    r0::zero_bss(addr_of_mut!(__sbss), addr_of_mut!(__ebss));
+    r0::init_data(
+        addr_of_mut!(__sdata),
+        addr_of_mut!(__edata),
+        addr_of!(__sidata),
+    );
 }
 
 #[cfg(any(not(target_os = "none"), feature = "lib-mode"))]

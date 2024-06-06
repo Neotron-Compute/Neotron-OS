@@ -181,7 +181,7 @@ impl TransientProgramArea {
         // points to, as the linker can only invent symbols pointing at
         // addresses; it cannot actually put values in RAM.
         #[cfg(all(target_os = "none", target_arch = "arm"))]
-        let official_tpa_start: Option<*mut u32> = Some((&mut _tpa_start) as *mut u32);
+        let official_tpa_start: Option<*mut u32> = Some(core::ptr::addr_of_mut!(_tpa_start));
 
         #[cfg(not(all(target_os = "none", target_arch = "arm")))]
         let official_tpa_start: Option<*mut u32> = None;
