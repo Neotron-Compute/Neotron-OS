@@ -31,7 +31,7 @@ MEMORY
 }
 
 /* # Entry point = what the BIOS calls to start the OS */
-ENTRY(main);
+ENTRY(os_main);
 
 /*
 Where the Transient Program Area starts.
