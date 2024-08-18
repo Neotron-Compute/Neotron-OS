@@ -68,6 +68,7 @@ static OPEN_HANDLES: CsRefCell<[OpenHandle; 8]> = CsRefCell::new([
 
 /// Ways in which loading a program can fail.
 #[derive(Debug)]
+#[allow(unused)]
 pub enum Error {
     /// A filesystem error occurred
     Filesystem(crate::fs::Error),
