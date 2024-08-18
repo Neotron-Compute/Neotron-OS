@@ -1,8 +1,5 @@
 //! Screen-related commands for Neotron OS
 
-use neotron_common_bios::video::RGBColour;
-use pc_keyboard::DecodedKey;
-
 use crate::{
     bios::{
         video::{Format, Mode},
@@ -138,18 +135,34 @@ fn gfx_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: 
         };
         let _ = file.read(buffer);
     } else {
+        let (odd_pattern, even_pattern) = match mode.format() {
+            // This is alternating hearts and diamonds
+            Format::Text8x16 | Format::Text8x8 => (
+                u32::from_le_bytes(*b"\x03\x0F\x04\x70"),
+                u32::from_le_bytes(*b"\x04\x70\x03\x0F"),
+            ),
+            // Can't do a checkerboard here - so stripes will do
+            Format::Chunky32 => (0x0000_0000, 0x0000_0001),
+            // These should produce black/white checkerboard, in the default
+            // palette
+            Format::Chunky16 => (0x0000_FFFF, 0xFFFF_0000),
+            Format::Chunky8 => (0x000F_000F, 0x0F00_0F00),
+            Format::Chunky4 => (0x0F0F_0F0F, 0xF0F0_F0F0),
+            Format::Chunky2 => (0x3333_3333, 0xCCCC_CCCC),
+            Format::Chunky1 => (0x5555_5555, 0xAAAA_AAAA),
+            _ => todo!(),
+        };
         // draw a dummy non-zero data. In Chunky1 this is a checkerboard.
         let line_size_words = mode.line_size_bytes() / 4;
         for row in 0..mode.vertical_lines() as usize {
             let word = if (row % 2) == 0 {
-                0x5555_5555
+                even_pattern
             } else {
-                0xAAAA_AAAA
+                odd_pattern
             };
             for col in 0..line_size_words {
                 let idx = (row * line_size_words) + col;
                 unsafe {
-                    // Let's try stripes?
                     buffer_ptr.add(idx).write_volatile(word);
                 }
             }
@@ -163,20 +176,8 @@ fn gfx_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: 
     }
 
     // Now wait for user input
-    let mut r = 0u8;
-    let mut g = 80u8;
-    let mut b = 160u8;
-    'wait: loop {
-        (api.video_wait_for_line)(0);
-        ((api.video_set_palette)(0, RGBColour::from_rgb(r, g, b)));
-        r = r.wrapping_add(1);
-        g = g.wrapping_add(1);
-        b = b.wrapping_add(1);
-
-        let keyin = crate::STD_INPUT.lock().get_raw();
-        if let Some(DecodedKey::Unicode('Q') | DecodedKey::Unicode('q')) = keyin {
-            break 'wait;
-        }
+    while crate::STD_INPUT.lock().get_raw().is_none() {
+        // spin
     }
 
     // Put it back as it was
