@@ -190,7 +190,7 @@ fn romfn(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &
         osprintln!("No ROM available");
         return;
     };
-    if let Some(arg) = args.get(0) {
+    if let Some(arg) = args.first() {
         let Some(entry) = romfs.find(arg) else {
             osprintln!("Couldn't find {} in ROM", arg);
             return;
@@ -199,14 +199,12 @@ fn romfn(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, args: &[&str], ctx: &
             osprintln!("Error: {:?}", e);
         }
     } else {
-        for entry in romfs.into_iter() {
-            if let Ok(entry) = entry {
-                osprintln!(
-                    "{} ({} bytes)",
-                    entry.metadata.file_name,
-                    entry.metadata.file_size
-                );
-            }
+        for entry in romfs.into_iter().flatten() {
+            osprintln!(
+                "{} ({} bytes)",
+                entry.metadata.file_name,
+                entry.metadata.file_size
+            );
         }
     }
 }
