@@ -136,7 +136,7 @@ impl App {
 
     /// Generates a number in the range [0, limit)
     fn random_up_to(&mut self, limit: usize) -> usize {
-        let buckets = ::core::usize::MAX / limit;
+        let buckets = usize::MAX / limit;
         let upper_edge = buckets * limit;
         loop {
             let attempt = self.random();
