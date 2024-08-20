@@ -1,6 +1,6 @@
 //! Screen-related commands for Neotron OS
 
-static SLIDES: [&[u8]; 10] = [
+static SLIDES: [&[u8]; 11] = [
     include_bytes!("../slide_pico_vga.bmp"),
     include_bytes!("../slide_pico_audio.bmp"),
     include_bytes!("../slide_bios.bmp"),
@@ -11,8 +11,10 @@ static SLIDES: [&[u8]; 10] = [
     include_bytes!("../slide_px3.bmp"),
     include_bytes!("../slide_pi.bmp"),
     include_bytes!("../slide_win30.bmp"),
+    include_bytes!("../slide_win31.bmp"),
 ];
-    
+
+use neotron_common_bios::video::Timing;
 use pc_keyboard::DecodedKey;
 
 use crate::{
@@ -257,13 +259,19 @@ fn demo_cmd(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ct
         (api.video_get_palette)(1),
         (api.video_get_palette)(2),
         (api.video_get_palette)(3),
+        (api.video_get_palette)(4),
+        (api.video_get_palette)(5),
+        (api.video_get_palette)(6),
+        (api.video_get_palette)(7),
+        (api.video_get_palette)(8),
+        (api.video_get_palette)(9),
+        (api.video_get_palette)(10),
+        (api.video_get_palette)(11),
+        (api.video_get_palette)(12),
+        (api.video_get_palette)(13),
+        (api.video_get_palette)(14),
+        (api.video_get_palette)(15),
     ];
-    if let neotron_common_bios::FfiResult::Err(e) =
-        unsafe { (api.video_set_mode)(Mode::from_u8(6), buffer_ptr) }
-    {
-        osprintln!("Couldn't set mode 6: {:?}", e);
-        return;
-    }
 
     'slides: for slide_bytes in SLIDES.iter().cycle().cloned() {
         if let Err(_e) = show_slide(slide_bytes, api, buffer_ptr) {
@@ -302,7 +310,7 @@ enum SlideError {
 fn show_slide(
     data: &[u8],
     api: &neotron_common_bios::Api,
-    buffer: *mut u32,
+    buffer_ptr: *mut u32,
 ) -> Result<(), SlideError> {
     use embedded_graphics::pixelcolor::RgbColor;
 
@@ -312,34 +320,76 @@ fn show_slide(
         return Err(SlideError::Unspecified);
     }
 
-    // Program palette
-    if let Some(table) = raw_bmp.color_table() {
-        for entry in 0..4 {
-            if let Some(rgb) = table.get(entry) {
-                let rgb666 =
-                    neotron_common_bios::video::RGBColour::from_rgb(rgb.r(), rgb.g(), rgb.b());
-                (api.video_set_palette)(entry as u8, rgb666);
-            }
+    let Some(table) = raw_bmp.color_table() else {
+        // can only do palettised images
+        return Err(SlideError::Unspecified);
+    };
+
+    // Set palette to black
+    for entry in 0..table.len() {
+        (api.video_set_palette)(entry as u8, neotron_common_bios::video::RGBColour::BLACK);
+    }
+
+    let (mode, bpp, px_per_word_shift) = match (header.bpp, table.len() <= 4) {
+        (tinybmp::Bpp::Bits4, true) => (Mode::new(Timing::T640x480, Format::Chunky2), 2, 4),
+        (tinybmp::Bpp::Bits4, false) => (Mode::new(Timing::T640x480, Format::Chunky4), 4, 3),
+        b => {
+            // can't display it
+            osprintln!("Couldn't handle {:?}", b);
+            return Err(SlideError::Unspecified);
         }
+    };
+
+    if let neotron_common_bios::FfiResult::Err(e) =
+        unsafe { (api.video_set_mode)(mode, buffer_ptr) }
+    {
+        osprintln!("Couldn't set mode {:?}: {:?}", mode, e);
+        return Err(SlideError::Unspecified);
     }
 
     // Copy bitmap
     let mut pixel_word = 0;
+    let mut offset_word = 0;
+    let mut left_in_word = 1 << px_per_word_shift;
+    let mut y = 0;
+    let mut x = 0;
+    // annoyingly bitmaps aren't always top-left to bottom-right.
     for px in raw_bmp.pixels() {
-        let offset_px = (px.position.y * 640) + px.position.x;
-        let offset_word = (offset_px / 16) as usize;
-        let shift = 30 - ((offset_px % 16) * 2);
-        if shift == 30 {
+        if y != px.position.y || x != px.position.x {
+            // we assume discontinuities only happen at line breaks
+            y = px.position.y;
+            x = px.position.x;
+            offset_word = (((y * 640) + x) >> px_per_word_shift) as usize;
+            left_in_word = 1 << px_per_word_shift;
             pixel_word = 0;
-        } else {
-            pixel_word <<= 2;
         }
-        pixel_word |= px.color & 0x03;
-        if shift == 0 {
+
+        pixel_word <<= bpp;
+        pixel_word |= px.color;
+
+        left_in_word -= 1;
+        if left_in_word == 0 {
             pixel_word = pixel_word.to_be();
             unsafe {
-                buffer.add(offset_word).write_volatile(pixel_word);
+                buffer_ptr.add(offset_word).write_volatile(pixel_word);
             }
+            pixel_word = 0;
+            left_in_word = 1 << px_per_word_shift;
+            offset_word += 1;
+        }
+
+        x += 1;
+        if x == 640 {
+            x = 0;
+            y += 1;
+        }
+    }
+
+    // Set palette to correct colours now picture is drawn
+    for entry in 0..table.len() {
+        if let Some(rgb) = table.get(entry as u32) {
+            let rgb666 = neotron_common_bios::video::RGBColour::from_rgb(rgb.r(), rgb.g(), rgb.b());
+            (api.video_set_palette)(entry as u8, rgb666);
         }
     }
 
