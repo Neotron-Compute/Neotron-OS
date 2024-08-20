@@ -310,6 +310,7 @@ impl TransientProgramArea {
         // We support a maximum of four arguments.
         #[allow(clippy::get_first)]
         let ffi_args = [
+            #[allow(clippy::get_first)]
             neotron_api::FfiString::new(args.get(0).unwrap_or(&"")),
             neotron_api::FfiString::new(args.get(1).unwrap_or(&"")),
             neotron_api::FfiString::new(args.get(2).unwrap_or(&"")),
