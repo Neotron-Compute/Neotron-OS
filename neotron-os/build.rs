@@ -37,9 +37,9 @@ fn main() {
 
     if option_env!("ROMFS_PATH").is_some() {
         println!("cargo::rustc-cfg=romfs_enabled=\"yes\"");
-        println!("cargo::rustc-check-cfg=cfg(romfs_enabled, values(\"yes\"))");
         println!("cargo::rerun-if-env-changed=ROMFS_PATH");
     }
+    println!("cargo::rustc-check-cfg=cfg(romfs_enabled, values(\"yes\"))");
 }
 
 /// Put the given script in our output directory and ensure it's on the linker
