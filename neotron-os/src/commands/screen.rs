@@ -1,17 +1,17 @@
 //! Screen-related commands for Neotron OS
 
 static SLIDES: [&[u8]; 11] = [
-    include_bytes!("../slide_pico_vga.bmp"),
-    include_bytes!("../slide_pico_audio.bmp"),
-    include_bytes!("../slide_bios.bmp"),
-    include_bytes!("../slide_os.bmp"),
-    include_bytes!("../slide_oss.bmp"),
-    include_bytes!("../slide_sdk.bmp"),
-    include_bytes!("../slide_stars.bmp"),
-    include_bytes!("../slide_px3.bmp"),
-    include_bytes!("../slide_pi.bmp"),
-    include_bytes!("../slide_win30.bmp"),
-    include_bytes!("../slide_win31.bmp"),
+    include_bytes!("../../images/slide_pico_vga.bmp"),
+    include_bytes!("../../images/slide_pico_audio.bmp"),
+    include_bytes!("../../images/slide_bios.bmp"),
+    include_bytes!("../../images/slide_os.bmp"),
+    include_bytes!("../../images/slide_oss.bmp"),
+    include_bytes!("../../images/slide_sdk.bmp"),
+    include_bytes!("../../images/slide_stars.bmp"),
+    include_bytes!("../../images/slide_px3.bmp"),
+    include_bytes!("../../images/slide_pi.bmp"),
+    include_bytes!("../../images/slide_win30.bmp"),
+    include_bytes!("../../images/slide_win31.bmp"),
 ];
 
 use neotron_common_bios::video::Timing;
