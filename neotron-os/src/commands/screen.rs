@@ -15,7 +15,7 @@ static SLIDES: [&[u8]; 11] = [
 ];
 
 use neotron_common_bios::video::Timing;
-use pc_keyboard::DecodedKey;
+use pc_keyboard::{DecodedKey, KeyCode};
 
 use crate::{
     bios::{
@@ -67,7 +67,10 @@ pub static GFX_ITEM: menu::Item<Ctx> = menu::Item {
 pub static DEMO_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
         function: demo_cmd,
-        parameters: &[],
+        parameters: &[menu::Parameter::Named {
+            parameter_name: "manual",
+            help: Some("Disable auto-scroll on the slide deck"),
+        }],
     },
     command: "demo",
     help: Some("Run demo"),
@@ -248,7 +251,11 @@ fn print_modes() {
 }
 
 /// Called when the "demo" command is executed.
-fn demo_cmd(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ctx: &mut Ctx) {
+fn demo_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
+    let manual_mode = menu::argument_finder(item, args, "manual")
+        .unwrap()
+        .is_some();
+
     let api = crate::API.get();
     let old_mode = (api.video_get_mode)();
     let old_ptr = (api.video_get_framebuffer)();
@@ -273,21 +280,59 @@ fn demo_cmd(_menu: &menu::Menu<Ctx>, _item: &menu::Item<Ctx>, _args: &[&str], ct
         (api.video_get_palette)(15),
     ];
 
-    'slides: for slide_bytes in SLIDES.iter().cycle().cloned() {
+    let mut slide_idx = 0;
+    'slides: loop {
+        let slide_bytes = SLIDES[slide_idx];
         if let Err(_e) = show_slide(slide_bytes, api, buffer_ptr) {
             break;
         }
-        // Now wait for user input - Q to quit, ' ' to skip
-        'wait: for _ in 0..450 {
-            // 450 frames = 7.5 seconds
-            (api.video_wait_for_line)(478);
-            (api.video_wait_for_line)(479);
-            let keyin = crate::STD_INPUT.lock().get_raw();
-            if let Some(DecodedKey::Unicode('Q') | DecodedKey::Unicode('q')) = keyin {
-                break 'slides;
+        if manual_mode {
+            // Now wait for user input - Q to quit, N for next, P for previous, etc
+            'wait: loop {
+                (api.video_wait_for_line)(478);
+                (api.video_wait_for_line)(479);
+                let keyin = crate::STD_INPUT.lock().get_raw();
+                if let Some(DecodedKey::Unicode('Q') | DecodedKey::Unicode('q')) = keyin {
+                    break 'slides;
+                }
+                if let Some(DecodedKey::Unicode('n') | DecodedKey::Unicode('N')) = keyin {
+                    if slide_idx < (SLIDES.len() - 1) {
+                        slide_idx += 1;
+                    }
+                    break 'wait;
+                }
+                if let Some(DecodedKey::Unicode('p') | DecodedKey::Unicode('P')) = keyin {
+                    if slide_idx > 0 {
+                        slide_idx -= 1;
+                    }
+                    break 'wait;
+                }
+                if let Some(DecodedKey::RawKey(KeyCode::Home)) = keyin {
+                    slide_idx = 0;
+                    break 'wait;
+                }
+                if let Some(DecodedKey::RawKey(KeyCode::End)) = keyin {
+                    slide_idx = SLIDES.len() - 1;
+                    break 'wait;
+                }
             }
-            if let Some(DecodedKey::Unicode(' ')) = keyin {
-                break 'wait;
+        } else {
+            // Now wait for timeout or user input
+            // 450 frames = 7.5 seconds
+            'wait: for _ in 0..450 {
+                (api.video_wait_for_line)(478);
+                (api.video_wait_for_line)(479);
+                let keyin = crate::STD_INPUT.lock().get_raw();
+                if let Some(DecodedKey::Unicode('Q') | DecodedKey::Unicode('q')) = keyin {
+                    break 'slides;
+                }
+                if let Some(DecodedKey::Unicode(' ')) = keyin {
+                    break 'wait;
+                }
+            }
+            slide_idx += 1;
+            if slide_idx >= SLIDES.len() {
+                slide_idx = 0;
             }
         }
     }
@@ -324,11 +369,6 @@ fn show_slide(
         // can only do palettised images
         return Err(SlideError::Unspecified);
     };
-
-    // Set palette to black
-    for entry in 0..table.len() {
-        (api.video_set_palette)(entry as u8, neotron_common_bios::video::RGBColour::BLACK);
-    }
 
     let (mode, bpp, px_per_word_shift) = match (header.bpp, table.len() <= 4) {
         (tinybmp::Bpp::Bits4, true) => (Mode::new(Timing::T640x480, Format::Chunky2), 2, 4),
