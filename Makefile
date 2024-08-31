@@ -1,5 +1,11 @@
 .PHONY: clean all rebuild
 
+#
+# User variables
+#
+# These are things you are expected to maybe need to edit
+#
+
 OUTPUT_DIR = ./release
 
 TARGET_LIST = \
@@ -7,21 +13,23 @@ TARGET_LIST = \
 	thumbv7m-none-eabi \
 	thumbv7em-none-eabi
 
-OFFSET_LIST = \
+UTILITY_LIST = \
+	flames \
+
+FLASHOFFSET_LIST = \
 	flash0002 \
 	flash0802 \
 	flash1002 \
 
-ROMFS_BIN_LIST = \
-	flames
-
-CROSS_OS_FILES_BIN = $(foreach target,$(TARGET_LIST),$(foreach offset,$(OFFSET_LIST), $(OUTPUT_DIR)/$(target)-$(offset)-libneotron_os.bin))
-
-CROSS_OF_FILES_ELF = $(CROSS_OS_FILES_BIN:.bin=.elf)
+#
+# Private variables
+#
+# These are things you are not expected to need to edit
+#
 
 LINUX_SO = $(OUTPUT_DIR)/x86_64-unknown-linux-gnu-libneotron_os.so
 
-all: $(LINUX_SO) $(CROSS_OF_FILES_ELF) $(CROSS_OS_FILES_BIN) $(ROM_IMAGE)
+all: $(LINUX_SO)
 
 clean:
 	rm -rf $(OUTPUT_DIR)
@@ -30,44 +38,71 @@ clean:
 rebuild: clean all
 
 #
-# Building the disk images
+# Macros
+#
+# These are macros we use to build rules
 #
 
-$(OUTPUT_DIR)/thumbv6m-none-eabi-romfs.img: $(OUTPUT_DIR)/thumbv6m-none-eabi-romfs/flames.elf
-	neotron-romfs-mkfs $^ > $@
+# This is all the things that must be done per-target, per-utility
+define TARGET_UTILITY_MACRO
 
-$(OUTPUT_DIR)/thumbv6m-none-eabi-romfs/flames.elf: ./target/thumbv6m-none-eabi/release/flames
-	mkdir -p $(OUTPUT_DIR)/thumbv6m-none-eabi-romfs
-	rust-strip $^ -o $@
+# Build the stripped utility from the unstripped utility
+$(OUTPUT_DIR)/$(1)-utilities/$(2).elf: ./target/$(1)/release/$(2)
+	mkdir -p $$(@D)
+	rust-strip $$^ -o $$@
 
-./target/thumbv6m-none-eabi/release/flames:
-	cargo build --release --bin=flames --target=thumbv6m-none-eabi
+# Build the unstripped utility from the Rust source
+./target/$(1)/release/$(2):
+	cargo build --release --bin=$(2) --target=$(1)
 
--include ./target/thumbv6m-none-eabi/release/flames.d
+endef
 
-$(OUTPUT_DIR)/thumbv7m-none-eabi-romfs.img: $(OUTPUT_DIR)/thumbv7m-none-eabi-romfs/flames.elf
-	neotron-romfs-mkfs $^ > $@
+# This is all the things that must be done per-target, per-flashoffset
+define TARGET_FLASHOFFSET_MACRO
 
-$(OUTPUT_DIR)/thumbv7m-none-eabi-romfs/flames.elf: ./target/thumbv7m-none-eabi/release/flames
-	mkdir -p $(OUTPUT_DIR)/thumbv7m-none-eabi-romfs
-	rust-strip $^ -o $@
+# Build the raw binary from the ELF
+$(OUTPUT_DIR)/$(1)-$(2)-libneotron_os.bin: $(OUTPUT_DIR)/$(1)-$(2)-libneotron_os.elf
+	mkdir -p $$(@D)
+	rust-objcopy -O binary $$^ $$@
 
-./target/thumbv7m-none-eabi/release/flames:
-	cargo build --release --bin=flames --target=thumbv7m-none-eabi
+all: $(OUTPUT_DIR)/$(1)-$(2)-libneotron_os.bin
 
--include ./target/thumbv7m-none-eabi/release/flames.d
+# Put the ELF in the release area
+$(OUTPUT_DIR)/$(1)-$(2)-libneotron_os.elf: ./target/$(1)/release/$(2)
+	cp $$^ $$@
 
-$(OUTPUT_DIR)/thumbv7em-none-eabi-romfs.img: $(OUTPUT_DIR)/thumbv7em-none-eabi-romfs/flames.elf
-	neotron-romfs-mkfs $^ > $@
+# Build the ELF from the rust source
+./target/$(1)/release/$(2): $(OUTPUT_DIR)/$(1)-romfs.img
+	ROMFS_PATH=$(abspath $$<) cargo build --release --bin=$(2) --target=$(1)
 
-$(OUTPUT_DIR)/thumbv7em-none-eabi-romfs/flames.elf: ./target/thumbv7em-none-eabi/release/flames
-	mkdir -p $(OUTPUT_DIR)/thumbv7em-none-eabi-romfs
-	rust-strip $^ -o $@
+-include ./target/$(1)/release/$(2).d
 
-./target/thumbv7em-none-eabi/release/flames:
-	cargo build --release --bin=flames --target=thumbv7em-none-eabi
+endef
 
--include ./target/thumbv7em-none-eabi/release/flames.d
+# This is all the things that must be done per-target
+define TARGET_MACRO
+
+ROMFS_STRIPPED_LIST = $(foreach bin,$(UTILITY_LIST),$(OUTPUT_DIR)/$(1)-utilities/$(bin).elf)
+
+# Build the ROMFS image for this target from the list of stripped utilities
+$(OUTPUT_DIR)/$(1)-romfs.img: $$(ROMFS_STRIPPED_LIST)
+	neotron-romfs-mkfs $$^ > $$@
+
+all: $(OUTPUT_DIR)/$(1)-romfs.img
+
+$(foreach bin,$(UTILITY_LIST), $(eval $(call TARGET_UTILITY_MACRO,$(1),$(bin))))
+
+$(foreach flashoffset,$(FLASHOFFSET_LIST), $(eval $(call TARGET_FLASHOFFSET_MACRO,$(1),$(flashoffset))))
+
+endef
+
+#
+# Rules
+#
+# These are our rules for building things
+#
+
+$(foreach target,$(TARGET_LIST),$(eval $(call TARGET_MACRO,$(target))))
 
 #
 # Building the Linux shared-object
@@ -81,95 +116,3 @@ $(LINUX_SO): ./target/x86_64-unknown-linux-gnu/release/libneotron_os.so
 	cargo build --lib --release --target=x86_64-unknown-linux-gnu
 
 -include ./target/x86_64-unknown-linux-gnu/release/libneotron_os.d
-
-#
-# Converting Rust .elf files into .bin files
-#
-
-%.bin: %.elf
-	rust-objcopy -O binary $^ $@
-
-$(OUTPUT_DIR)/thumbv6m-none-eabi-flash0002-libneotron_os.elf: ./target/thumbv6m-none-eabi/release/flash0002
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv6m-none-eabi-flash0802-libneotron_os.elf: ./target/thumbv6m-none-eabi/release/flash0802
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv6m-none-eabi-flash1002-libneotron_os.elf: ./target/thumbv6m-none-eabi/release/flash1002
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv7em-none-eabi-flash0002-libneotron_os.elf: ./target/thumbv7em-none-eabi/release/flash0002
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv7em-none-eabi-flash0802-libneotron_os.elf: ./target/thumbv7em-none-eabi/release/flash0802
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv7em-none-eabi-flash1002-libneotron_os.elf: ./target/thumbv7em-none-eabi/release/flash1002
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv7m-none-eabi-flash0002-libneotron_os.elf: ./target/thumbv7m-none-eabi/release/flash0002
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv7m-none-eabi-flash0802-libneotron_os.elf: ./target/thumbv7m-none-eabi/release/flash0802
-	cp $^ $@
-
-$(OUTPUT_DIR)/thumbv7m-none-eabi-flash1002-libneotron_os.elf: ./target/thumbv7m-none-eabi/release/flash1002
-	cp $^ $@
-
-
-#
-# flash0002 binaries
-#
-
-./target/thumbv6m-none-eabi/release/flash0002: $(OUTPUT_DIR)/thumbv6m-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv6m-none-eabi-romfs.img cargo build --release --target=thumbv6m-none-eabi --bin=flash0002
-
--include ./target/thumbv6m-none-eabi/release/flash0002.d
-
-./target/thumbv7m-none-eabi/release/flash0002: $(OUTPUT_DIR)/thumbv7m-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv7m-none-eabi-romfs.img cargo build --release --target=thumbv7m-none-eabi --bin=flash0002
-
--include ./target/thumbv7m-none-eabi/release/flash0002.d
-
-./target/thumbv7em-none-eabi/release/flash0002: $(OUTPUT_DIR)/thumbv7em-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv7em-none-eabi-romfs.img cargo build --release --target=thumbv7em-none-eabi --bin=flash0002
-
--include ./target/thumbv7em-none-eabi/release/flash0002.d
-
-#
-# flash0802 binaries
-#
-
-./target/thumbv6m-none-eabi/release/flash0802: $(OUTPUT_DIR)/thumbv6m-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv6m-none-eabi-romfs.img cargo build --release --target=thumbv6m-none-eabi --bin=flash0802
-
--include ./target/thumbv6m-none-eabi/release/flash0802.d
-
-./target/thumbv7m-none-eabi/release/flash0802: $(OUTPUT_DIR)/thumbv7m-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv7m-none-eabi-romfs.img cargo build --release --target=thumbv7m-none-eabi --bin=flash0802
-
--include ./target/thumbv7m-none-eabi/release/flash0802.d
-
-./target/thumbv7em-none-eabi/release/flash0802: $(OUTPUT_DIR)/thumbv7em-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv7em-none-eabi-romfs.img cargo build --release --target=thumbv7em-none-eabi --bin=flash0802
-
--include ./target/thumbv7em-none-eabi/release/flash0802.d
-
-#
-# flash1002 binaries
-#
-
-./target/thumbv6m-none-eabi/release/flash1002: $(OUTPUT_DIR)/thumbv6m-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv6m-none-eabi-romfs.img cargo build --release --target=thumbv6m-none-eabi --bin=flash1002
-
--include ./target/thumbv6m-none-eabi/release/flash1002.d
-
-./target/thumbv7m-none-eabi/release/flash1002: $(OUTPUT_DIR)/thumbv7m-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv7m-none-eabi-romfs.img cargo build --release --target=thumbv7m-none-eabi --bin=flash1002
-
--include ./target/thumbv7m-none-eabi/release/flash1002.d
-
-./target/thumbv7em-none-eabi/release/flash1002: $(OUTPUT_DIR)/thumbv7em-none-eabi-romfs.img
-	ROMFS=$(OUTPUT_DIR)/thumbv7em-none-eabi-romfs.img cargo build --release --target=thumbv7em-none-eabi --bin=flash1002
-
--include ./target/thumbv7em-none-eabi/release/flash1002.d
