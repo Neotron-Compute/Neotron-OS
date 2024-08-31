@@ -56,6 +56,8 @@ $(OUTPUT_DIR)/$(1)-utilities/$(2).elf: ./target/$(1)/release/$(2)
 ./target/$(1)/release/$(2):
 	cargo build --release --bin=$(2) --target=$(1)
 
+-include ./target/$(1)/release/$(2).d
+
 endef
 
 # This is all the things that must be done per-target, per-flashoffset
