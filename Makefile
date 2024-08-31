@@ -11,7 +11,8 @@ OUTPUT_DIR = ./release
 TARGET_LIST = \
 	thumbv6m-none-eabi \
 	thumbv7m-none-eabi \
-	thumbv7em-none-eabi
+	thumbv7em-none-eabi \
+	thumbv8m.main-none-eabihf \
 
 UTILITY_LIST = \
 	flames \
