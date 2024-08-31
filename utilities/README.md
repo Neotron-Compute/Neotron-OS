@@ -10,3 +10,4 @@ We pack them into a ROMFS, which Neotron OS then includes as a disk image.
 ## List of Utilities
 
 * [Flames](./flames) - draws an ANSI flame animation
+* [Show](./show) - shows a bitmap on screen (WIP)

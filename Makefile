@@ -15,6 +15,7 @@ TARGET_LIST = \
 
 UTILITY_LIST = \
 	flames \
+	show \
 
 FLASHOFFSET_LIST = \
 	flash0002 \
