@@ -4,10 +4,13 @@ fn main() {
     if let Ok("none") = std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
         copy_linker_script("neotron-flash-1002.ld");
         println!("cargo::rustc-link-arg-bin=flash1002=-Tneotron-flash-1002.ld");
+        println!("cargo::rerun-if-changed=neotron-flash-1002.ld");
         copy_linker_script("neotron-flash-0802.ld");
         println!("cargo::rustc-link-arg-bin=flash0802=-Tneotron-flash-0802.ld");
+        println!("cargo::rerun-if-changed=neotron-flash-0802.ld");
         copy_linker_script("neotron-flash-0002.ld");
         println!("cargo::rustc-link-arg-bin=flash0002=-Tneotron-flash-0002.ld");
+        println!("cargo::rerun-if-changed=neotron-flash-0002.ld");
     }
 
     if let Ok(cmd_output) = std::process::Command::new("git")
