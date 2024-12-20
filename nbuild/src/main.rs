@@ -27,6 +27,8 @@ enum Commands {
     },
     /// Checks the Neotron OS source code using clippy
     Clippy,
+    /// Runs any tests
+    Test,
 }
 
 /// A simple utility for building Neotron OS and a suitable ROMFS image
@@ -45,18 +47,21 @@ fn packages() -> Vec<nbuild::Package> {
             path: std::path::Path::new("./nbuild/Cargo.toml"),
             output: std::path::Path::new("./nbuild/target/debug/nbuild{exe}"),
             kind: nbuild::PackageKind::NBuild,
+            testable: true,
         },
         nbuild::Package {
             name: "flames utility",
             path: std::path::Path::new("./utilities/flames/Cargo.toml"),
             output: std::path::Path::new("./target/{target}/{profile}/flames"),
             kind: nbuild::PackageKind::Utility,
+            testable: false,
         },
         nbuild::Package {
             name: "Neotron OS",
             path: std::path::Path::new("./neotron-os/Cargo.toml"),
             output: std::path::Path::new("./target/{target}/{profile}/neotron-os"),
             kind: nbuild::PackageKind::Os,
+            testable: false,
         },
     ]
 }
@@ -80,6 +85,7 @@ fn main() {
         Some(Commands::Libraries { target }) => library(&packages, target.as_deref()),
         Some(Commands::Format { check }) => format(&packages, check),
         Some(Commands::Clippy) => clippy(&packages),
+        Some(Commands::Test) => test(&packages),
     }
 }
 
@@ -183,6 +189,21 @@ fn clippy(packages: &[nbuild::Package]) {
         println!("Linting {} with clippy", package.name);
         if let Err(e) = nbuild::cargo(&["clippy"], None, package.path) {
             eprintln!("Lint failed: {}", e);
+            is_error = true;
+        }
+    }
+    if is_error {
+        std::process::exit(1);
+    }
+}
+
+/// Runs `cargo test` over all the packages
+fn test(packages: &[nbuild::Package]) {
+    let mut is_error = false;
+    for package in packages.iter().filter(|p| p.testable) {
+        println!("Testing {}", package.name);
+        if let Err(e) = nbuild::cargo(&["test"], None, package.path) {
+            eprintln!("Test failed: {}", e);
             is_error = true;
         }
     }

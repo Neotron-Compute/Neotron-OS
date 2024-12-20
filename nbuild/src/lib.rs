@@ -35,6 +35,7 @@ pub struct Package {
     pub path: &'static std::path::Path,
     pub output: &'static std::path::Path,
     pub kind: PackageKind,
+    pub testable: bool,
 }
 
 /// Parse an integer, with an optional `0x` prefix.
