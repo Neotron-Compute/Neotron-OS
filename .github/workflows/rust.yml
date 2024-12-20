@@ -60,6 +60,15 @@ jobs:
         with:
           submodules: true
       - run: cargo nbuild test
+  prep-release:
+    runs-on: ubuntu-latest
+    needs: [binaries, linux-library, windows-library, run-tests]
+    steps:
+      - run: mkdir ./release
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./release
+      - run: ls -lR ./release
   release:
     runs-on: ubuntu-latest
     needs: [binaries, linux-library, windows-library, run-tests]
