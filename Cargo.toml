@@ -4,6 +4,9 @@ members = [
     "utilities/flames",
 ]
 resolver = "2"
+exclude = [
+    "nbuild"
+]
 
 [workspace.dependencies]
 neotron-sdk = "0.2.0"
