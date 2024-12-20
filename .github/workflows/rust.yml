@@ -19,37 +19,37 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
-          name: ${{ matrix.target }}-${{ matrix.start_address }}-binaries
+          name: ${{ matrix.target }}-${{ matrix.start_address }}-binary
           if-no-files-found: error
           path: |
             ./target/${{ matrix.target }}/release/neotron-os
             ./target/${{ matrix.target }}/release/neotron-os.bin
             ./target/${{ matrix.target }}/release/romfs.bin
-  linux-libraries:
+  linux-library:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - run: cargo nbuild libraries
+      - run: cargo nbuild library
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
-          name: linux-libraries
+          name: linux-library
           if-no-files-found: error
           path: |
             ./target/release/libneotron_os.so
-  windows-libraries:
+  windows-library:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - run: cargo nbuild libraries
+      - run: cargo nbuild library
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
-          name: windows-libraries
+          name: windows-library
           if-no-files-found: error
           path: |
             ./target/release/neotron_os.dll
@@ -62,7 +62,7 @@ jobs:
       - run: cargo nbuild test
   release:
     runs-on: ubuntu-latest
-    needs: [binaries, linux-libraries, windows-libraries, run-tests]
+    needs: [binaries, linux-library, windows-library, run-tests]
     if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
     steps:
       - run: mkdir ./release

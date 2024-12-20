@@ -14,7 +14,7 @@ enum Commands {
         target: String,
     },
     /// Builds the OS as a library, for the native machine
-    Libraries {
+    Library {
         /// The target we're building Neotron OS for
         #[clap(long)]
         target: Option<String>,
@@ -82,7 +82,7 @@ fn main() {
         }) => {
             binary(&packages, &start_address, &target);
         }
-        Some(Commands::Libraries { target }) => library(&packages, target.as_deref()),
+        Some(Commands::Library { target }) => library(&packages, target.as_deref()),
         Some(Commands::Format { check }) => format(&packages, check),
         Some(Commands::Clippy) => clippy(&packages),
         Some(Commands::Test) => test(&packages),

@@ -37,18 +37,30 @@ Your board will need an appropriate Neotron BIOS installed, and you need to have
 OpenOCD or some other programming tool running for your particular board. See
 your BIOS instructions for more details.
 
-Building Neotron OS is handled by the `nbuild` tool, in this repository.
+Building Neotron OS is handled by the `nbuild` tool, in this repository. Run `cargo nbuild help` for more information.
 
-Run `cargo nbuild help` for more information.
+To make an image for a board like the Neotron Pico, you want to run `cargo nbuild binary`. By default this will produce a `thumbv6m-none-eabi` image linked to run at address `0x1002_0000`, with a ROMFS containing various utilities, which is what you need on a Neotron Pico. Your BIOS should tell you if you need to change these options, and how to load the resulting image onto your system. 
 
-Your BIOS should tell you which options to pass, and how to load the resulting image onto your system.
+```console
+$ cargo nbuild binary
+...
+$ ls ./target/thumbv6m-none-eabi/release
+build/  examples/  flames.d      libflames.d     libneotron_os.d     neotron-os      neotron-os.d
+deps/   flames     incremental/  libflames.rlib  libneotron_os.rlib  neotron-os.bin  romfs.bin
+```
 
-Programs in the ROMFS can be loaded with:
+Here:
+
+* `romfs.bin` is the raw ROMFS image
+* `neotron-os` is an ELF file containing the OS and the ROMFS image 
+* `neotron-os.bin` is an raw binary copy of the contents of the ELF file
+
+When the OS is running, programs in the ROMFS can be loaded with:
 
 ```text
 > rom
-flames.elf (14212 bytes)
-> rom flames.elf
+flames (14212 bytes)
+> rom flames
 Loading 4256 bytes to 0x20001000
 Loading 532 bytes to 0x200020a0
 Loading 4908 bytes to 0x200022b4
@@ -62,6 +74,7 @@ You can also build a *shared object* to load into a Windows/Linux/macOS applicat
 
 ```console
 $ cargo nbuild library
+...
 $ ls ./target/debug/*.so
 ./target/debug/libneotron_os.so
 ```
