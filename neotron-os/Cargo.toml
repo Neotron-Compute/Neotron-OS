@@ -12,17 +12,7 @@ readme = "README.md"
 repository = "https://github.com/neotron-compute/Neotron-OS"
 
 [[bin]]
-name = "flash1002"
-test = false
-bench = false
-
-[[bin]]
-name = "flash0802"
-test = false
-bench = false
-
-[[bin]]
-name = "flash0002"
+name = "neotron-os"
 test = false
 bench = false
 

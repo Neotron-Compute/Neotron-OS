@@ -20,6 +20,23 @@ impl std::fmt::Display for CargoError {
     }
 }
 
+/// The kinds of package we have
+#[derive(Debug, PartialEq, Eq)]
+pub enum PackageKind {
+    Os,
+    Utility,
+    NBuild,
+}
+
+/// Describes a package in this repository
+#[derive(Debug)]
+pub struct Package {
+    pub name: &'static str,
+    pub path: &'static std::path::Path,
+    pub output: &'static std::path::Path,
+    pub kind: PackageKind,
+}
+
 /// Parse an integer, with an optional `0x` prefix.
 ///
 /// Underscores are ignored.
@@ -37,12 +54,25 @@ where
     if let Some(suffix) = input.strip_prefix("0x") {
         u32::from_str_radix(suffix, 16)
     } else {
-        u32::from_str_radix(&input, 10)
+        input.parse()
     }
 }
 
 /// Runs cargo
 pub fn cargo<P>(commands: &[&str], target: Option<&str>, manifest_path: P) -> Result<(), CargoError>
+where
+    P: AsRef<std::path::Path>,
+{
+    cargo_with_env(commands, target, manifest_path, &[])
+}
+
+/// Runs cargo with extra environment variables
+pub fn cargo_with_env<P>(
+    commands: &[&str],
+    target: Option<&str>,
+    manifest_path: P,
+    environment: &[(&'static str, String)],
+) -> Result<(), CargoError>
 where
     P: AsRef<std::path::Path>,
 {
@@ -56,6 +86,9 @@ where
     }
     command_line.arg("--manifest-path");
     command_line.arg(manifest_path.as_ref());
+    for (k, v) in environment.into_iter() {
+        command_line.env(k, v);
+    }
 
     println!("Running: {:?}", command_line);
 

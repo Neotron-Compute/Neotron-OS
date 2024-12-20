@@ -21,15 +21,11 @@
 /* Provides information about the memory layout of the device */
 MEMORY
 {
-    /* The first 128 KiB is for the BIOS. We get the rest. */
-    FLASH (rx)  : ORIGIN = 0x10020000, LENGTH = 256K
-
+    /* The BIOS is before the OS, we get the rest. We place a large upper bound on the length. */
+    FLASH (rx)  : ORIGIN = ${{start_address}}, LENGTH = 4096K
     /*
-     * The RAM reserved for the OS. Above this is the Transient Program Area.
-     *
-     * This is defined by the Neotron specification for a given platform. On this
-     * Cortex-M based platform, it's the start of Cortex-M SRAM, plus 4 KiB, or
-     * 0x2000_1000.
+     * We get the bottom 4KB of RAM. Anything above that is for applications
+     * (up to wherever the BIOS tells us we can use.)
      */
     RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 4K
 }
