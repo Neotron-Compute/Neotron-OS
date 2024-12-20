@@ -152,7 +152,7 @@ fn library(packages: &[nbuild::Package], target: Option<&str>) {
             package.name,
             target.unwrap_or("native")
         );
-        if let Err(e) = nbuild::cargo(&["build", "--lib"], target, package.path) {
+        if let Err(e) = nbuild::cargo(&["build", "--release", "--lib"], target, package.path) {
             eprintln!("Build of {} failed: {}", package.name, e);
             is_error = true;
         }
