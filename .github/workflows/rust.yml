@@ -4,21 +4,19 @@ on: [push, pull_request]
 
 jobs:
   binaries:
-    name: Build Binaries
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         target: [thumbv6m-none-eabi, thumbv7em-none-eabi, thumbv8m.main-none-eabi]
         start_address: [0x0802_0000, 0x1002_0000]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - run: |
           rustup target add ${{ matrix.target }}
           cargo nbuild binaries --target=${{ matrix.target }} --start-address=${{ matrix.start_address }}
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
           name: ${{ matrix.target }}-${{ matrix.start_address }}-binaries
@@ -28,14 +26,11 @@ jobs:
   linux-libraries:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Build
-        run: cargo nbuild libraries
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - run: cargo nbuild libraries
+      - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
           name: linux-libraries
@@ -45,14 +40,11 @@ jobs:
   windows-libraries:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Build
-        run: cargo nbuild libraries
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - run: cargo nbuild libraries
+      - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
           name: windows-libraries
@@ -60,25 +52,23 @@ jobs:
           path: |
             ./target/release/neotron_os.dll
   run-tests:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - run: cargo nbuild test
   release:
-    name: Upload Release
-    needs: [binaries, linux-libraries, windows-libraries]
+    runs-on: ubuntu-latest
+    needs: [binaries, linux-libraries, windows-libraries, run-tests]
     if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
     steps:
-      - name: Make release area
-        run: |
+      - run: |
           mkdir ./release
-      - name: Download Artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: ./release
-      - name: Upload files to Release
-        uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v1
         with:
           files: |
             ./release/*
