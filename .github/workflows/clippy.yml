@@ -1,4 +1,4 @@
-name: Format
+name: Clippy
 
 on: [push, pull_request]
 
