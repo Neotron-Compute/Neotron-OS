@@ -103,9 +103,7 @@ jobs:
         with:
           name: release
           path: .
-      - run: ls -l .
-      - run: ls -lR ./release
       - uses: softprops/action-gh-release@v1
         with:
           files: |
-            ./release/release-${{ github.ref_name }}.zip
+            ./release-${{ github.ref_name }}.zip
