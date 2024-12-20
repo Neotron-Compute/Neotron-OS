@@ -84,8 +84,8 @@ jobs:
       - run: mkdir ./release
       - uses: actions/download-artifact@v4
         with:
-          path: ./release
-      - run: ls -lR ./release
+          path: ./release-${{ github.ref_name }}
+      - run: ls -lR ./release-${{ github.ref_name }}
       - run: zip -r ./release-${{ github.ref_name }}.zip ./release-${{ github.ref_name }}
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
