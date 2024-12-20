@@ -3,7 +3,7 @@ name: Build
 on: [push, pull_request]
 
 jobs:
-  binaries:
+  embedded-binaries:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -25,7 +25,7 @@ jobs:
             ./target/${{ matrix.target }}/release/neotron-os
             ./target/${{ matrix.target }}/release/neotron-os.bin
             ./target/${{ matrix.target }}/release/romfs.bin
-  linux-library:
+  x64_64-pc-linux-gnu-library:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +35,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
-          name: linux-library
+          name: x64_64-pc-linux-gnu-library
           if-no-files-found: error
           path: |
             ./target/release/libneotron_os.so
-  windows-library:
+  x86_64-pc-windows-msvc-library:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,10 +49,27 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
-          name: windows-library
+          name: x86_64-pc-windows-msvc-library
           if-no-files-found: error
           path: |
             ./target/release/neotron_os.dll
+            ./target/release/neotron_os.dll.exp
+            ./target/release/neotron_os.dll.lib
+            ./target/release/neotron_os.pdb
+  aarch64-apple-darwin-library:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: cargo nbuild library
+      - uses: actions/upload-artifact@v4
+        if: ${{success()}}
+        with:
+          name: x86_64-pc-windows-msvc-library
+          if-no-files-found: error
+          path: |
+            ./target/release/neotron_os.so
   run-tests:
     runs-on: ubuntu-latest
     steps:
@@ -60,25 +77,31 @@ jobs:
         with:
           submodules: true
       - run: cargo nbuild test
-  prep-release:
+  preview-release:
     runs-on: ubuntu-latest
-    needs: [binaries, linux-library, windows-library, run-tests]
+    needs: [embedded-binaries, x64_64-pc-linux-gnu-library, x86_64-pc-windows-msvc-library, aarch64-apple-darwin-library, run-tests]
     steps:
       - run: mkdir ./release
       - uses: actions/download-artifact@v4
         with:
           path: ./release
       - run: ls -lR ./release
+      - run: zip -r ./release-${{ github.ref_name }}.zip ./release-${{ github.ref_name }}
+      - uses: actions/upload-artifact@v4
+        if: ${{success()}}
+        with:
+          name: release
+          if-no-files-found: error
+          path: |
+            ./release-${{ github.ref_name }}.zip
   release:
     runs-on: ubuntu-latest
-    needs: [binaries, linux-library, windows-library, run-tests]
+    needs: [preview-release]
     if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
     steps:
-      - run: mkdir ./release
       - uses: actions/download-artifact@v4
         with:
-          path: ./release-${{ github.ref_name }}
-      - run: zip -r release-${{ github.ref_name }}.zip ./release-${{ github.ref_name }}
+          path: .
       - uses: softprops/action-gh-release@v1
         with:
           files: |
