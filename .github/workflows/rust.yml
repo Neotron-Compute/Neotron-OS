@@ -15,7 +15,7 @@ jobs:
           submodules: true
       - run: |
           rustup target add ${{ matrix.target }}
-          cargo nbuild binaries --target=${{ matrix.target }} --start-address=${{ matrix.start_address }}
+          cargo nbuild binary --target=${{ matrix.target }} --start-address=${{ matrix.start_address }}
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
