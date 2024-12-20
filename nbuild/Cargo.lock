@@ -52,6 +52,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "autocfg"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
+
+[[package]]
+name = "bitflags"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
+
+[[package]]
+name = "chrono"
+version = "0.4.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "clap"
 version = "4.5.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -98,6 +119,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 
 [[package]]
+name = "embedded-io"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -113,7 +140,46 @@ checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 name = "nbuild"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
+ "embedded-io",
+ "neotron-api",
+ "neotron-romfs",
+]
+
+[[package]]
+name = "neotron-api"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67d6c96706b6f3ec069abfb042cadfd2d701980fa4940f407c0bc28ee1e1c493"
+dependencies = [
+ "bitflags",
+ "neotron-ffi",
+]
+
+[[package]]
+name = "neotron-ffi"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d37886e73d87732421aaf5da617eead9d69a7daf6b0d059780f76157d9ce5372"
+
+[[package]]
+name = "neotron-romfs"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f7987e34f25f780b5dd5a22b5da7ce9a566d93b8f608f78293a170f35f024c7"
+dependencies = [
+ "embedded-io",
+ "neotron-api",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]

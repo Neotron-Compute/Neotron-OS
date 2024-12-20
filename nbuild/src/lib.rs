@@ -2,18 +2,18 @@
 
 /// The ways that spawning `cargo` can fail
 #[derive(Debug)]
-pub enum CargoError {
+pub enum ProcessError {
     SpawnError(std::io::Error),
     RunError(std::process::ExitStatus),
 }
 
-impl std::fmt::Display for CargoError {
+impl std::fmt::Display for ProcessError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CargoError::SpawnError(error) => write!(f, "Failed to spawn `cargo`: {}", error),
-            CargoError::RunError(exit_status) => write!(
+            ProcessError::SpawnError(error) => write!(f, "Failed to spawn command: {}", error),
+            ProcessError::RunError(exit_status) => write!(
                 f,
-                "Failed to complete `cargo` command ({}). There should be an error above",
+                "Failed to complete command ({}). There should be an error above",
                 exit_status
             ),
         }
@@ -33,9 +33,16 @@ pub enum PackageKind {
 pub struct Package {
     pub name: &'static str,
     pub path: &'static std::path::Path,
-    pub output: &'static std::path::Path,
     pub kind: PackageKind,
     pub testable: bool,
+    pub output_template: Option<&'static str>,
+}
+
+impl Package {
+    pub fn output(&self, target: &str, profile: &str) -> Option<String> {
+        self.output_template
+            .map(|s| s.replace("{target}", target).replace("{profile}", profile))
+    }
 }
 
 /// Parse an integer, with an optional `0x` prefix.
@@ -60,7 +67,11 @@ where
 }
 
 /// Runs cargo
-pub fn cargo<P>(commands: &[&str], target: Option<&str>, manifest_path: P) -> Result<(), CargoError>
+pub fn cargo<P>(
+    commands: &[&str],
+    target: Option<&str>,
+    manifest_path: P,
+) -> Result<(), ProcessError>
 where
     P: AsRef<std::path::Path>,
 {
@@ -73,7 +84,7 @@ pub fn cargo_with_env<P>(
     target: Option<&str>,
     manifest_path: P,
     environment: &[(&'static str, String)],
-) -> Result<(), CargoError>
+) -> Result<(), ProcessError>
 where
     P: AsRef<std::path::Path>,
 {
@@ -93,11 +104,45 @@ where
 
     println!("Running: {:?}", command_line);
 
-    let output = command_line.output().map_err(CargoError::SpawnError)?;
+    let output = command_line.output().map_err(ProcessError::SpawnError)?;
 
     if output.status.success() {
         Ok(())
     } else {
-        Err(CargoError::RunError(output.status))
+        Err(ProcessError::RunError(output.status))
     }
 }
+
+/// Make a binary version of an ELF file
+pub fn make_bin<P>(path: P) -> Result<std::path::PathBuf, ProcessError>
+where
+    P: AsRef<std::path::Path>,
+{
+    let path = path.as_ref();
+    println!("Making binary of: {}", path.display());
+    let output = std::process::Command::new("rustc")
+        .arg("--print")
+        .arg("target-libdir")
+        .output()
+        .expect("Failed to run rustc --print target-libdir");
+    let sysroot = String::from_utf8(output.stdout).expect("sysroot path isn't UTF-8");
+    let sysroot: std::path::PathBuf = sysroot.trim().into();
+    let mut objcopy = sysroot.clone();
+    objcopy.pop();
+    objcopy.push("bin");
+    objcopy.push("llvm-objcopy");
+    let mut command_line = std::process::Command::new(objcopy);
+    command_line.args(["-O", "binary"]);
+    command_line.arg(path);
+    let output_file = path.with_extension("bin");
+    command_line.arg(&output_file);
+    println!("Running: {:?}", command_line);
+    let output = command_line.output().map_err(ProcessError::SpawnError)?;
+    if output.status.success() {
+        Ok(output_file)
+    } else {
+        Err(ProcessError::RunError(output.status))
+    }
+}
+
+// End of file

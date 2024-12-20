@@ -45,21 +45,21 @@ fn packages() -> Vec<nbuild::Package> {
         nbuild::Package {
             name: "nbuild",
             path: std::path::Path::new("./nbuild/Cargo.toml"),
-            output: std::path::Path::new("./nbuild/target/debug/nbuild{exe}"),
+            output_template: None,
             kind: nbuild::PackageKind::NBuild,
             testable: true,
         },
         nbuild::Package {
-            name: "flames utility",
+            name: "flames",
             path: std::path::Path::new("./utilities/flames/Cargo.toml"),
-            output: std::path::Path::new("./target/{target}/{profile}/flames"),
+            output_template: Some("./target/{target}/{profile}/flames"),
             kind: nbuild::PackageKind::Utility,
             testable: false,
         },
         nbuild::Package {
             name: "Neotron OS",
             path: std::path::Path::new("./neotron-os/Cargo.toml"),
-            output: std::path::Path::new("./target/{target}/{profile}/neotron-os"),
+            output_template: Some("./target/{target}/{profile}/neotron-os"),
             kind: nbuild::PackageKind::Os,
             testable: false,
         },
@@ -91,11 +91,16 @@ fn main() {
 
 /// Builds the utility and OS packages as binaries
 fn binary(packages: &[nbuild::Package], start_address: &str, target: &str) {
+    use chrono::{Datelike, Timelike};
+
     let mut is_error = false;
     let Ok(start_address) = nbuild::parse_int(start_address) else {
         eprintln!("{:?} was not a valid integer", start_address);
         std::process::exit(1);
     };
+
+    let mut romfs_entries = Vec::new();
+    // Build utilities
     for package in packages
         .iter()
         .filter(|p| p.kind == nbuild::PackageKind::Utility)
@@ -108,7 +113,57 @@ fn binary(packages: &[nbuild::Package], start_address: &str, target: &str) {
             eprintln!("Build of {} failed: {}", package.name, e);
             is_error = true;
         }
+        let package_output = package
+            .output(target, "release")
+            .expect("utilties should have an output");
+        let contents = match std::fs::read(&package_output) {
+            Ok(contents) => contents,
+            Err(e) => {
+                eprintln!("Reading of {} failed: {}", package_output, e);
+                continue;
+            }
+        };
+        let ctime = std::time::SystemTime::now();
+        let ctime = chrono::DateTime::<chrono::Utc>::from(ctime);
+        romfs_entries.push(neotron_romfs::Entry {
+            metadata: neotron_romfs::EntryMetadata {
+                file_name: package.name,
+                ctime: neotron_api::file::Time {
+                    year_since_1970: (ctime.year() - 1970) as u8,
+                    zero_indexed_month: ctime.month0() as u8,
+                    zero_indexed_day: ctime.day0() as u8,
+                    hours: ctime.hour() as u8,
+                    minutes: ctime.minute() as u8,
+                    seconds: ctime.second() as u8,
+                },
+                file_size: contents.len() as u32,
+            },
+            contents,
+        });
     }
+
+    // Build ROMFS
+    let mut buffer = Vec::new();
+    let _size = match neotron_romfs::RomFs::construct_into(&mut buffer, &romfs_entries) {
+        Ok(size) => size,
+        Err(e) => {
+            eprintln!("Making ROMFS failed: {:?}", e);
+            std::process::exit(1);
+        }
+    };
+    let mut romfs_path = std::path::PathBuf::new();
+    romfs_path.push(std::env::current_dir().expect("We have no CWD?"));
+    romfs_path.push("target");
+    romfs_path.push(target);
+    romfs_path.push("release");
+    romfs_path.push("romfs.bin");
+    if let Err(e) = std::fs::write(&romfs_path, &buffer) {
+        eprintln!("Writing ROMFS to {} failed: {:?}", romfs_path.display(), e);
+        std::process::exit(1);
+    }
+    println!("Built ROMFS at {}", romfs_path.display());
+
+    // Build OS
     for package in packages
         .iter()
         .filter(|p| p.kind == nbuild::PackageKind::Os)
@@ -117,10 +172,13 @@ fn binary(packages: &[nbuild::Package], start_address: &str, target: &str) {
             "Cross-compiling {}, using start address 0x{:08x} and target {:?}",
             package.name, start_address, target
         );
-        let environment = [(
-            "NEOTRON_OS_START_ADDRESS",
-            format!("0x{:08x}", start_address),
-        )];
+        let environment = [
+            (
+                "NEOTRON_OS_START_ADDRESS",
+                format!("0x{:08x}", start_address),
+            ),
+            ("ROMFS_PATH", romfs_path.to_string_lossy().to_string()),
+        ];
         if let Err(e) = nbuild::cargo_with_env(
             &["build", "--release"],
             Some(target),
@@ -128,6 +186,13 @@ fn binary(packages: &[nbuild::Package], start_address: &str, target: &str) {
             &environment,
         ) {
             eprintln!("Build of {} failed: {}", package.name, e);
+            is_error = true;
+        }
+        let package_output = package
+            .output(target, "release")
+            .expect("PackageKind::Os should always have output");
+        if let Err(e) = nbuild::make_bin(&package_output) {
+            eprintln!("objcopy of {} failed: {}", package_output, e);
             is_error = true;
         }
     }

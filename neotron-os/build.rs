@@ -36,9 +36,10 @@ fn main() {
         println!("cargo::rustc-link-lib=dylib=msvcrt");
     }
 
-    if option_env!("ROMFS_PATH").is_some() {
+    if let Some(path) = option_env!("ROMFS_PATH") {
         println!("cargo::rustc-cfg=romfs_enabled=\"yes\"");
         println!("cargo::rerun-if-env-changed=ROMFS_PATH");
+        println!("cargo::rerun-if-changed={}", path);
     }
     println!("cargo::rustc-check-cfg=cfg(romfs_enabled, values(\"yes\"))");
 }

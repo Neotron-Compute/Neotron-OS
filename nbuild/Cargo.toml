@@ -12,4 +12,8 @@ readme = "README.md"
 repository = "https://github.com/neotron-compute/Neotron-OS"
 
 [dependencies]
+chrono = { version = "0.4.39", default-features = false, features = ["std"] }
 clap = { version = "4.5.23", features = ["derive"] }
+embedded-io = { version = "0.6.1", features = ["std"] }
+neotron-api = "0.2.0"
+neotron-romfs = "2.0"
