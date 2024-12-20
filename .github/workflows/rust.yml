@@ -13,9 +13,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - run: |
-          rustup target add ${{ matrix.target }}
-          cargo nbuild binary --target=${{ matrix.target }} --start-address=${{ matrix.start_address }}
+      - run: rustup target add ${{ matrix.target }}
+      - run: cargo nbuild binary --target=${{ matrix.target }} --start-address=${{ matrix.start_address }}
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
@@ -63,8 +62,7 @@ jobs:
     needs: [binaries, linux-libraries, windows-libraries, run-tests]
     if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
     steps:
-      - run: |
-          mkdir ./release
+      - run: mkdir ./release
       - uses: actions/download-artifact@v4
         with:
           path: ./release
