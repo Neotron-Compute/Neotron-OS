@@ -1,0 +1,2 @@
+[alias]
+nbuild = "run --manifest-path nbuild/Cargo.toml --"

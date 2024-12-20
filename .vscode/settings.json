@@ -1,4 +1,7 @@
 {
     "rust-analyzer.checkOnSave.allTargets": false,
-    "rust-analyzer.cargo.target": "thumbv6m-none-eabi"
+    "rust-analyzer.linkedProjects": [
+        "./Cargo.toml",
+        "./nbuild/Cargo.toml"
+    ]
 }

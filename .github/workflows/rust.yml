@@ -3,78 +3,107 @@ name: Build
 on: [push, pull_request]
 
 jobs:
-  build:
-    name: Build (and Release)
+  embedded-binaries:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [thumbv6m-none-eabi, thumbv7em-none-eabi, thumbv8m.main-none-eabi]
+        start_address: [0x0802_0000, 0x1002_0000]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: true
- 
-      - name: Check Syntax
-        run: |
-          cargo check
- 
-      - name: Test
-        run: |
-          cargo test --lib
-
-      - name: Install Targets and Tools
-        run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
-          rustup target add thumbv7em-none-eabi
-          rustup target add thumbv7m-none-eabi
-          rustup target add thumbv6m-none-eabi
-          rustup component add llvm-tools-preview
-          echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV
-          echo CARGO_TERM_COLOR=always >> $GITHUB_ENV
-  
-      - name: Install tools
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-binutils@0.3.6
-
-      - name: Install ROMFS tools
-        run: |
-          cargo install neotron-romfs-lsfs
-          cargo install neotron-romfs-mkfs
-
-      - name: Build
-        run: |
-          ./build.sh --verbose
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - run: rustup target add ${{ matrix.target }}
+      - run: rustup component add llvm-tools-preview
+      - run: cargo nbuild binary --target=${{ matrix.target }} --start-address=${{ matrix.start_address }}
+      - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
-          name: Artifacts
+          name: ${{ matrix.target }}-${{ matrix.start_address }}-binary
           if-no-files-found: error
           path: |
-            ./release/
-
-      - name: Upload files to Release
-        if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+            ./target/${{ matrix.target }}/release/neotron-os
+            ./target/${{ matrix.target }}/release/neotron-os.bin
+            ./target/${{ matrix.target }}/release/romfs.bin
+  x64_64-unknown-linux-gnu-library:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: cargo nbuild library
+      - uses: actions/upload-artifact@v4
+        if: ${{success()}}
+        with:
+          name: x64_64-unknown-linux-gnu-library
+          if-no-files-found: error
+          path: |
+            ./target/release/libneotron_os.so
+  x86_64-pc-windows-msvc-library:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: cargo nbuild library
+      - uses: actions/upload-artifact@v4
+        if: ${{success()}}
+        with:
+          name: x86_64-pc-windows-msvc-library
+          if-no-files-found: error
+          path: |
+            ./target/release/neotron_os.dll
+            ./target/release/neotron_os.dll.exp
+            ./target/release/neotron_os.dll.lib
+            ./target/release/neotron_os.pdb
+  aarch64-apple-darwin-library:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: cargo nbuild library
+      - uses: actions/upload-artifact@v4
+        if: ${{success()}}
+        with:
+          name: aarch64-apple-darwin-library
+          if-no-files-found: error
+          path: |
+            ./target/release/libneotron_os.dylib
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: cargo nbuild test
+  preview-release:
+    runs-on: ubuntu-latest
+    needs: [embedded-binaries, x64_64-unknown-linux-gnu-library, x86_64-pc-windows-msvc-library, aarch64-apple-darwin-library, run-tests]
+    steps:
+      - run: mkdir ./release
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./release-${{ github.ref_name }}
+      - run: ls -lR ./release-${{ github.ref_name }}
+      - run: zip -r ./release-${{ github.ref_name }}.zip ./release-${{ github.ref_name }}
+      - uses: actions/upload-artifact@v4
+        if: ${{success()}}
+        with:
+          name: release
+          if-no-files-found: error
+          path: |
+            ./release-${{ github.ref_name }}.zip
+  release:
+    runs-on: ubuntu-latest
+    needs: [preview-release]
+    if: github.event_name == 'push' && startswith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: .
+      - uses: softprops/action-gh-release@v1
         with:
           files: |
-            ./release/thumbv6m-none-eabi-flash0002-libneotron_os.bin
-            ./release/thumbv6m-none-eabi-flash0002-libneotron_os.elf
-            ./release/thumbv6m-none-eabi-flash0802-libneotron_os.bin
-            ./release/thumbv6m-none-eabi-flash0802-libneotron_os.elf
-            ./release/thumbv6m-none-eabi-flash1002-libneotron_os.bin
-            ./release/thumbv6m-none-eabi-flash1002-libneotron_os.elf
-            ./release/thumbv7em-none-eabi-flash0002-libneotron_os.bin
-            ./release/thumbv7em-none-eabi-flash0002-libneotron_os.elf
-            ./release/thumbv7em-none-eabi-flash0802-libneotron_os.bin
-            ./release/thumbv7em-none-eabi-flash0802-libneotron_os.elf
-            ./release/thumbv7em-none-eabi-flash1002-libneotron_os.bin
-            ./release/thumbv7em-none-eabi-flash1002-libneotron_os.elf
-            ./release/thumbv7m-none-eabi-flash0002-libneotron_os.bin
-            ./release/thumbv7m-none-eabi-flash0002-libneotron_os.elf
-            ./release/thumbv7m-none-eabi-flash0802-libneotron_os.bin
-            ./release/thumbv7m-none-eabi-flash0802-libneotron_os.elf
-            ./release/thumbv7m-none-eabi-flash1002-libneotron_os.bin
-            ./release/thumbv7m-none-eabi-flash1002-libneotron_os.elf
-            ./release/x86_64-unknown-linux-gnu-libneotron_os.so
+            ./release-${{ github.ref_name }}.zip

@@ -14,7 +14,8 @@ This OS is a work in progress. We intend to support:
 * [x] Executing applications from RAM
   * [x] Applications can print to stdout
   * [x] Applications can read from stdin
-  * [ ] Applications can open/close/read/write files
+  * [x] Applications can open/close/read files
+  * [ ] Applications can write to files
 * [x] MBR/FAT32 formatted block devices
   * [x] Read blocks
   * [x] Directory listing of /
@@ -22,6 +23,7 @@ This OS is a work in progress. We intend to support:
   * [ ] Delete files
   * [ ] Change directory
 * [x] Load ELF binaries from disk
+* [x] Load ELF binaries from ROM
 * [x] Changing text modes
 * [ ] Basic networking
 * [x] Music playback
@@ -35,55 +37,30 @@ Your board will need an appropriate Neotron BIOS installed, and you need to have
 OpenOCD or some other programming tool running for your particular board. See
 your BIOS instructions for more details.
 
-We compile one version of Neotron OS, but we link it three times to produce
-three different binaries:
+Building Neotron OS is handled by the `nbuild` tool, in this repository. Run `cargo nbuild help` for more information.
 
-* `flash0002` - is linked to run from address `0x0002_0000`
-* `flash1002` - is linked to run from address `0x1002_0000`
-* `flash0802` - is linked to run from address `0x0802_0000`
+To make an image for a board like the Neotron Pico, you want to run `cargo nbuild binary`. By default this will produce a `thumbv6m-none-eabi` image linked to run at address `0x1002_0000`, with a ROMFS containing various utilities, which is what you need on a Neotron Pico. Your BIOS should tell you if you need to change these options, and how to load the resulting image onto your system. 
 
 ```console
-$ git clone https://github.com/neotron-compute/Neotron-OS.git
-$ cd Neotron-OS
-$ cargo build --target thumbv6m-none-eabi --release --bins
-$ ls ./target/thumbv6m-none-eabi/release/flash*02
-./target/thumbv6m-none-eabi/release/flash0002 ./target/thumbv6m-none-eabi/release/flash0802 ./target/thumbv6m-none-eabi/release/flash1002
+$ cargo nbuild binary
+...
+$ ls ./target/thumbv6m-none-eabi/release
+build/  examples/  flames.d      libflames.d     libneotron_os.d     neotron-os      neotron-os.d
+deps/   flames     incremental/  libflames.rlib  libneotron_os.rlib  neotron-os.bin  romfs.bin
 ```
 
-Your BIOS should tell you which one you want and how to load it onto your system.
+Here:
 
-You can also build a *shared object* to load into a Windows/Linux/macOS application.
+* `romfs.bin` is the raw ROMFS image
+* `neotron-os` is an ELF file containing the OS and the ROMFS image 
+* `neotron-os.bin` is an raw binary copy of the contents of the ELF file
 
-```console
-$ cargo build --lib
-$ ls ./target/debug/*.so
-./target/debug/libneotron_os.so
-```
-
-If you want to include a ROMFS, you need to:
-
-```bash
-cargo install neotron-romfs-lsfs
-cargo install neotron-romfs-mkfs
-cargo install cargo-binutils
-```
-
-A bunch of utilities are supplied in the [`utilities`](./utilities/) folder. Build them all, and make a ROMFS image, then build the OS with the `ROMFS_PATH` environment variable set.
-
-```bash
-TGT=$(pwd)/target/thumbv6m-none-eabi/release
-cargo build --bin flames --target thumbv6m-none-eabi --release
-rust-strip ${TGT}/flames -o ${TGT}/flames.elf
-neotron-romfs-mkfs ${TGT}/flames.elf > ${TGT}/romfs.img
-ROMFS_PATH=${TGT}/romfs.img cargo build --bin flash1002 --target thumbv6m-none-eabi --release
-```
-
-The OS will then include the ROMFS image, which you can access with the `rom` command.
+When the OS is running, programs in the ROMFS can be loaded with:
 
 ```text
 > rom
-flames.elf (14212 bytes)
-> rom flames.elf
+flames (14212 bytes)
+> rom flames
 Loading 4256 bytes to 0x20001000
 Loading 532 bytes to 0x200020a0
 Loading 4908 bytes to 0x200022b4
@@ -93,6 +70,15 @@ Loading 4908 bytes to 0x200022b4
 
 A better UI for loading files from ROM is being planned (maybe we should have drive letters, and the ROM can be `R:`).
 
+You can also build a *shared object* to load into a Windows/Linux/macOS application, like [Neotron Desktop BIOS](https://github.com/neotron-compute/neotron-desktop-bios): 
+
+```console
+$ cargo nbuild library
+...
+$ ls ./target/debug/*.so
+./target/debug/libneotron_os.so
+```
+
 ## Changelog
 
 See [`CHANGELOG.md`](./CHANGELOG.md)
@@ -100,7 +86,7 @@ See [`CHANGELOG.md`](./CHANGELOG.md)
 ## Licence
 
 ```text
-Neotron-OS Copyright (c) Jonathan 'theJPster' Pallant and The Neotron Developers, 2023
+Copyright (c) 2019-2024 Jonathan 'theJPster' Pallant and The Neotron Developers
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
