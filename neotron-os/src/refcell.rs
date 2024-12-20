@@ -92,7 +92,7 @@ pub struct CsRefCellGuard<'a, T> {
     parent: &'a CsRefCell<T>,
 }
 
-impl<'a, T> Deref for CsRefCellGuard<'a, T> {
+impl<T> Deref for CsRefCellGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -101,14 +101,14 @@ impl<'a, T> Deref for CsRefCellGuard<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for CsRefCellGuard<'a, T> {
+impl<T> DerefMut for CsRefCellGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let ptr = self.parent.inner.get();
         unsafe { &mut *ptr }
     }
 }
 
-impl<'a, T> Drop for CsRefCellGuard<'a, T> {
+impl<T> Drop for CsRefCellGuard<'_, T> {
     fn drop(&mut self) {
         // We hold this refcell guard exclusively, so this can't race
         self.parent.locked.store(false, Ordering::Release);
