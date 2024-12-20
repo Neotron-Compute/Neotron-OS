@@ -77,8 +77,9 @@ jobs:
       - run: mkdir ./release
       - uses: actions/download-artifact@v4
         with:
-          path: ./release
+          path: ./release-${{ github.ref_name }}
+      - run: zip release-${{ github.ref_name }}.zip ./release-${{ github.ref_name }}
       - uses: softprops/action-gh-release@v1
         with:
           files: |
-            ./release/*/*
+            ./release-${{ github.ref_name }}.zip
