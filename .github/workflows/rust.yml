@@ -25,7 +25,7 @@ jobs:
             ./target/${{ matrix.target }}/release/neotron-os
             ./target/${{ matrix.target }}/release/neotron-os.bin
             ./target/${{ matrix.target }}/release/romfs.bin
-  x64_64-pc-linux-gnu-library:
+  x64_64-unknown-linux-gnu-library:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{success()}}
         with:
-          name: x64_64-pc-linux-gnu-library
+          name: x64_64-unknown-linux-gnu-library
           if-no-files-found: error
           path: |
             ./target/release/libneotron_os.so
@@ -79,7 +79,7 @@ jobs:
       - run: cargo nbuild test
   preview-release:
     runs-on: ubuntu-latest
-    needs: [embedded-binaries, x64_64-pc-linux-gnu-library, x86_64-pc-windows-msvc-library, aarch64-apple-darwin-library, run-tests]
+    needs: [embedded-binaries, x64_64-unknown-linux-gnu-library, x86_64-pc-windows-msvc-library, aarch64-apple-darwin-library, run-tests]
     steps:
       - run: mkdir ./release
       - uses: actions/download-artifact@v4
