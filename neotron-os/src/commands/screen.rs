@@ -32,16 +32,10 @@ pub static MODE_ITEM: menu::Item<Ctx> = menu::Item {
 pub static GFX_ITEM: menu::Item<Ctx> = menu::Item {
     item_type: menu::ItemType::Callback {
         function: gfx_cmd,
-        parameters: &[
-            menu::Parameter::Mandatory {
-                parameter_name: "new_mode",
-                help: Some("The new gfx mode to try"),
-            },
-            menu::Parameter::Optional {
-                parameter_name: "filename",
-                help: Some("a file to display"),
-            },
-        ],
+        parameters: &[menu::Parameter::Mandatory {
+            parameter_name: "new_mode",
+            help: Some("The new gfx mode to try"),
+        }],
     },
     command: "gfx",
     help: Some("Test a graphics mode"),
@@ -107,12 +101,13 @@ fn mode_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], _ctx
 }
 
 /// Called when the "gfx" command is executed
+///
+/// Performs a selection of graphical tests
 fn gfx_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: &mut Ctx) {
     let Some(new_mode) = menu::argument_finder(item, args, "new_mode").unwrap() else {
         osprintln!("Missing arg");
         return;
     };
-    let file_name = menu::argument_finder(item, args, "filename").unwrap();
     let Ok(mode_num) = new_mode.parse::<u8>() else {
         osprintln!("Invalid integer {:?}", new_mode);
         return;
@@ -126,48 +121,11 @@ fn gfx_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: 
     let old_ptr = (api.video_get_framebuffer)();
 
     let buffer = ctx.tpa.as_slice_u8();
-    let buffer_ptr = buffer.as_mut_ptr() as *mut u32;
-    if let Some(file_name) = file_name {
-        let Ok(file) = crate::FILESYSTEM.open_file(file_name, embedded_sdmmc::Mode::ReadOnly)
-        else {
-            osprintln!("No such file.");
-            return;
-        };
-        let _ = file.read(buffer);
-    } else {
-        let (odd_pattern, even_pattern) = match mode.format() {
-            // This is alternating hearts and diamonds
-            Format::Text8x16 | Format::Text8x8 => (
-                u32::from_le_bytes(*b"\x03\x0F\x04\x70"),
-                u32::from_le_bytes(*b"\x04\x70\x03\x0F"),
-            ),
-            // Can't do a checkerboard here - so stripes will do
-            Format::Chunky32 => (0x0000_0000, 0x0000_0001),
-            // These should produce black/white checkerboard, in the default
-            // palette
-            Format::Chunky16 => (0x0000_FFFF, 0xFFFF_0000),
-            Format::Chunky8 => (0x000F_000F, 0x0F00_0F00),
-            Format::Chunky4 => (0x0F0F_0F0F, 0xF0F0_F0F0),
-            Format::Chunky2 => (0x3333_3333, 0xCCCC_CCCC),
-            Format::Chunky1 => (0x5555_5555, 0xAAAA_AAAA),
-            _ => todo!(),
-        };
-        // draw a dummy non-zero data. In Chunky1 this is a checkerboard.
-        let line_size_words = mode.line_size_bytes() / 4;
-        for row in 0..mode.vertical_lines() as usize {
-            let word = if (row % 2) == 0 {
-                even_pattern
-            } else {
-                odd_pattern
-            };
-            for col in 0..line_size_words {
-                let idx = (row * line_size_words) + col;
-                unsafe {
-                    buffer_ptr.add(idx).write_volatile(word);
-                }
-            }
-        }
+    if mode.frame_size_bytes() > buffer.len() {
+        osprintln!("Not enough space in TPA");
+        return;
     }
+    let buffer_ptr = buffer.as_mut_ptr() as *mut u32;
 
     if let neotron_common_bios::FfiResult::Err(e) =
         unsafe { (api.video_set_mode)(mode, buffer_ptr) }
@@ -175,9 +133,152 @@ fn gfx_cmd(_menu: &menu::Menu<Ctx>, item: &menu::Item<Ctx>, args: &[&str], ctx: 
         osprintln!("Couldn't set mode {}: {:?}", mode_num, e);
     }
 
-    // Now wait for user input
-    while crate::STD_INPUT.lock().get_raw().is_none() {
-        // spin
+    let gen_value = |x: u16, y: u16, colour: u32| -> u64 {
+        (x as u64) << 48 | (y as u64) << 32 | (colour & 0xFFFFFF) as u64
+    };
+
+    // plots a vertical colour stripe pattern.
+    let vertical = |handle| -> Result<(), neotron_api::Error> {
+        for y in 0..mode.vertical_lines() {
+            let mut colour = 0u32;
+            for x in 0..mode.horizontal_pixels() {
+                let result: Result<_, _> = (crate::program::CALLBACK_TABLE.ioctl)(
+                    handle,
+                    crate::program::GFX_COMMAND_CHUNKY_PLOT,
+                    gen_value(x, y, colour),
+                )
+                .into();
+                result?;
+                colour = colour.wrapping_add(1) & 0xFFFFFF;
+            }
+        }
+
+        // Now wait for user input
+        while crate::STD_INPUT.lock().get_raw().is_none() {
+            // spin
+        }
+
+        Ok(())
+    };
+
+    // plots a horizontal colour stripe pattern.
+    let horizontal = |handle| -> Result<(), neotron_api::Error> {
+        let mut colour = 0u32;
+        for y in 0..mode.vertical_lines() {
+            for x in 0..mode.horizontal_pixels() {
+                let result: Result<_, _> = (crate::program::CALLBACK_TABLE.ioctl)(
+                    handle,
+                    crate::program::GFX_COMMAND_CHUNKY_PLOT,
+                    gen_value(x, y, colour),
+                )
+                .into();
+                result?;
+            }
+            colour = colour.wrapping_add(1) & 0xFFFFFF;
+        }
+
+        // Now wait for user input
+        while crate::STD_INPUT.lock().get_raw().is_none() {
+            // spin
+        }
+
+        Ok(())
+    };
+
+    // plots a rolling stripe pattern.
+    let rolling = |handle| -> Result<(), neotron_api::Error> {
+        for y in 0..mode.vertical_lines() {
+            let mut colour = y as u32;
+            for x in 0..mode.horizontal_pixels() {
+                let result: Result<_, _> = (crate::program::CALLBACK_TABLE.ioctl)(
+                    handle,
+                    crate::program::GFX_COMMAND_CHUNKY_PLOT,
+                    gen_value(x, y, colour),
+                )
+                .into();
+                result?;
+                colour = colour.wrapping_add(1) & 0xFFFFFF;
+            }
+        }
+
+        // Now wait for user input
+        while crate::STD_INPUT.lock().get_raw().is_none() {
+            // spin
+        }
+
+        Ok(())
+    };
+
+    // plots a grid
+    let grid = |handle| -> Result<(), neotron_api::Error> {
+        let result: Result<_, _> = (crate::program::CALLBACK_TABLE.ioctl)(
+            handle,
+            crate::program::GFX_COMMAND_CLEAR_SCREEN,
+            0,
+        )
+        .into();
+        result?;
+
+        let width = mode.horizontal_pixels() / 10;
+        let height = mode.vertical_lines() / 10;
+
+        for y in 0..mode.vertical_lines() {
+            if (y % height) == 0 || (y == mode.vertical_lines() - 1) {
+                // solid line
+                for x in 0..mode.horizontal_pixels() {
+                    let result: Result<_, _> = (crate::program::CALLBACK_TABLE.ioctl)(
+                        handle,
+                        crate::program::GFX_COMMAND_CHUNKY_PLOT,
+                        gen_value(x, y, 15),
+                    )
+                    .into();
+                    result?;
+                }
+            } else {
+                // stripes
+                for x in 0..mode.horizontal_pixels() {
+                    let colour = if (x % width) == 0 || (x == mode.horizontal_pixels() - 1) {
+                        15
+                    } else {
+                        0
+                    };
+                    let result: Result<_, _> = (crate::program::CALLBACK_TABLE.ioctl)(
+                        handle,
+                        crate::program::GFX_COMMAND_CHUNKY_PLOT,
+                        gen_value(x, y, colour),
+                    )
+                    .into();
+                    result?;
+                }
+            }
+        }
+
+        // Now wait for user input
+        while crate::STD_INPUT.lock().get_raw().is_none() {
+            // spin
+        }
+
+        Ok(())
+    };
+
+    let handle: Result<_, _> =
+        (crate::program::CALLBACK_TABLE.open)("GFX:".into(), neotron_api::file::Flags::WRITE)
+            .into();
+    if let Ok(handle) = handle {
+        if let Err(e) = vertical(handle) {
+            osprintln!("Draw failure on vertical: {:?}", e);
+        }
+        if let Err(e) = horizontal(handle) {
+            osprintln!("Draw failure on horizontal: {:?}", e);
+        }
+        if let Err(e) = rolling(handle) {
+            osprintln!("Draw failure on rolling: {:?}", e);
+        }
+        if let Err(e) = grid(handle) {
+            osprintln!("Draw failure on grid: {:?}", e);
+        }
+        // close the handle
+        let _ = (crate::program::CALLBACK_TABLE.close)(handle);
     }
 
     // Put it back as it was

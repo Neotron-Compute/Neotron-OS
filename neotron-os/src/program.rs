@@ -5,7 +5,7 @@ use neotron_api::FfiByteSlice;
 use crate::{fs, osprintln, refcell::CsRefCell, API, FILESYSTEM};
 
 #[allow(unused)]
-static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
+pub static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
     open: api_open,
     close: api_close,
     write: api_write,
@@ -45,6 +45,8 @@ pub enum OpenHandle {
     Closed,
     /// Represents the audio device,
     Audio,
+    /// Represents the framebuffer device
+    Gfx,
 }
 
 /// The open handle table
@@ -399,6 +401,16 @@ extern "C" fn api_open(
             }
         }
     }
+    if path.as_str().eq_ignore_ascii_case("GFX:") {
+        match allocate_handle(OpenHandle::Gfx) {
+            Ok(n) => {
+                return neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8));
+            }
+            Err(_f) => {
+                return neotron_api::Result::Err(neotron_api::Error::OutOfMemory);
+            }
+        }
+    }
 
     // OK, let's assume it's a file relative to the root of our one and only volume
     let f = match FILESYSTEM.open_file(path.as_str(), embedded_sdmmc::Mode::ReadOnly) {
@@ -478,6 +490,10 @@ extern "C" fn api_write(
         OpenHandle::StdIn | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
         }
+        OpenHandle::Gfx => {
+            // TODO: Allow users to write to the screen
+            neotron_api::Result::Err(neotron_api::Error::Unimplemented)
+        }
     }
 }
 
@@ -522,6 +538,10 @@ extern "C" fn api_read(
         }
         OpenHandle::Stdout | OpenHandle::StdErr | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
+        }
+        OpenHandle::Gfx => {
+            // TODO: allow users to read the contents of the screen
+            neotron_api::Result::Err(neotron_api::Error::Unimplemented)
         }
     }
 }
@@ -583,61 +603,9 @@ extern "C" fn api_ioctl(
     let Some(h) = open_handles.get_mut(fd.value() as usize) else {
         return neotron_api::Result::Err(neotron_api::Error::BadHandle);
     };
-    let api = API.get();
-    match (h, command) {
-        (OpenHandle::Audio, 0) => {
-            // Getting sample rate
-            let neotron_common_bios::FfiResult::Ok(config) = (api.audio_output_get_config)() else {
-                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
-            };
-            let mut result: u64 = config.sample_rate_hz as u64;
-            let nibble = match config.sample_format.make_safe() {
-                Ok(neotron_common_bios::audio::SampleFormat::EightBitMono) => 0,
-                Ok(neotron_common_bios::audio::SampleFormat::EightBitStereo) => 1,
-                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitMono) => 2,
-                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitStereo) => 3,
-                _ => {
-                    return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
-                }
-            };
-            result |= nibble << 60;
-            neotron_api::Result::Ok(result)
-        }
-        (OpenHandle::Audio, 1) => {
-            // Setting sample rate
-            let sample_rate = value as u32;
-            let format = match value >> 60 {
-                0 => neotron_common_bios::audio::SampleFormat::EightBitMono,
-                1 => neotron_common_bios::audio::SampleFormat::EightBitStereo,
-                2 => neotron_common_bios::audio::SampleFormat::SixteenBitMono,
-                3 => neotron_common_bios::audio::SampleFormat::SixteenBitStereo,
-                _ => {
-                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
-                }
-            };
-            let config = neotron_common_bios::audio::Config {
-                sample_format: format.make_ffi_safe(),
-                sample_rate_hz: sample_rate,
-            };
-            match (api.audio_output_set_config)(config) {
-                neotron_common_bios::FfiResult::Ok(_) => {
-                    osprintln!("audio {}, {:?}", sample_rate, format);
-                    neotron_api::Result::Ok(0)
-                }
-                neotron_common_bios::FfiResult::Err(_) => {
-                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
-                }
-            }
-        }
-        (OpenHandle::Audio, 2) => {
-            // Setting sample space
-            match (api.audio_output_get_space)() {
-                neotron_common_bios::FfiResult::Ok(n) => neotron_api::Result::Ok(n as u64),
-                neotron_common_bios::FfiResult::Err(_) => {
-                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
-                }
-            }
-        }
+    match h {
+        OpenHandle::Audio => ioctl_audio(h, command, value),
+        OpenHandle::Gfx => ioctl_gfx(h, command, value),
         _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
     }
 }
@@ -750,6 +718,358 @@ extern "C" fn api_malloc(
 
 /// Free some previously allocated memory
 extern "C" fn api_free(_ptr: *mut core::ffi::c_void, _size: usize, _alignment: usize) {}
+
+/// Handle audio-specific ioctls
+fn ioctl_audio(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Result<u64> {
+    let api = API.get();
+    match command {
+        0 => {
+            // Getting sample rate
+            let neotron_common_bios::FfiResult::Ok(config) = (api.audio_output_get_config)() else {
+                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+            };
+            let mut result: u64 = config.sample_rate_hz as u64;
+            let nibble = match config.sample_format.make_safe() {
+                Ok(neotron_common_bios::audio::SampleFormat::EightBitMono) => 0,
+                Ok(neotron_common_bios::audio::SampleFormat::EightBitStereo) => 1,
+                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitMono) => 2,
+                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitStereo) => 3,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+                }
+            };
+            result |= nibble << 60;
+            neotron_api::Result::Ok(result)
+        }
+        1 => {
+            // Setting sample rate
+            let sample_rate = value as u32;
+            let format = match value >> 60 {
+                0 => neotron_common_bios::audio::SampleFormat::EightBitMono,
+                1 => neotron_common_bios::audio::SampleFormat::EightBitStereo,
+                2 => neotron_common_bios::audio::SampleFormat::SixteenBitMono,
+                3 => neotron_common_bios::audio::SampleFormat::SixteenBitStereo,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+                }
+            };
+            let config = neotron_common_bios::audio::Config {
+                sample_format: format.make_ffi_safe(),
+                sample_rate_hz: sample_rate,
+            };
+            match (api.audio_output_set_config)(config) {
+                neotron_common_bios::FfiResult::Ok(_) => {
+                    osprintln!("audio {}, {:?}", sample_rate, format);
+                    neotron_api::Result::Ok(0)
+                }
+                neotron_common_bios::FfiResult::Err(_) => {
+                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+                }
+            }
+        }
+        2 => {
+            // Setting sample space
+            match (api.audio_output_get_space)() {
+                neotron_common_bios::FfiResult::Ok(n) => neotron_api::Result::Ok(n as u64),
+                neotron_common_bios::FfiResult::Err(_) => {
+                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+                }
+            }
+        }
+        _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
+    }
+}
+
+/// Clear the screen
+///
+/// The command the colour, which is taken modulo the number of on-screen colours.
+pub const GFX_COMMAND_CLEAR_SCREEN: u64 = 0;
+
+/// Plot a chunky pixel
+///
+/// The command contains [ x | y | mode | colour ].
+///
+/// * `x` is 16 bits and marks the horizontal position (0 is left)
+/// * `y` is 16 bits and marks the vertical position (0 is top)
+/// * `mode` is 8 bits and is currently ignored
+/// * `colour` is 24 bits, and is taken modulo the number of on-screen colours
+pub const GFX_COMMAND_CHUNKY_PLOT: u64 = 1;
+
+/// Handle framebuffer-specific ioctls
+fn ioctl_gfx(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Result<u64> {
+    let api = API.get();
+    match command {
+        GFX_COMMAND_CLEAR_SCREEN => {
+            let colour = (value & 0xFFFFFF) as u32;
+            let fb_ptr = (api.video_get_framebuffer)();
+            let video_mode = (api.video_get_mode)();
+            let pixel_byte = match video_mode.format() {
+                // neotron_common_bios::video::Format::Chunky32 unsupported
+                // neotron_common_bios::video::Format::Chunky16 unsupported
+                neotron_common_bios::video::Format::Chunky8 => colour as u8,
+                neotron_common_bios::video::Format::Chunky4 => {
+                    let nibble = (colour as u8) & 0x0F;
+                    nibble << 4 | nibble
+                }
+                neotron_common_bios::video::Format::Chunky2 => {
+                    let pair = (colour as u8) & 0x03;
+                    pair << 6 | pair << 4 | pair << 2 | pair
+                }
+                neotron_common_bios::video::Format::Chunky1 => {
+                    let bit = (colour as u8) & 0x01;
+                    if bit != 0 {
+                        0xFF
+                    } else {
+                        0x00
+                    }
+                }
+                _ => return neotron_api::Result::Err(neotron_api::Error::BadHandle),
+            };
+            for y in 0..video_mode.vertical_lines() {
+                let line_start =
+                    unsafe { fb_ptr.byte_add(video_mode.line_size_bytes() * (y as usize)) }
+                        as *mut u8;
+                unsafe {
+                    line_start.write_bytes(pixel_byte, video_mode.line_size_bytes());
+                }
+            }
+            Ok(0).into()
+        }
+        GFX_COMMAND_CHUNKY_PLOT => {
+            // the position on screen
+            let x = (value >> 48) as u16;
+            let y = (value >> 32) as u16;
+            // whether to "set", "xor", "or", or "and" the pixel.
+            // currently only "set" is supported (0)
+            let _mode = (value >> 24) as u8;
+            // the colour to use
+            let colour = (value & 0xFFFFFF) as u32;
+            let fb_ptr = (api.video_get_framebuffer)();
+            let video_mode = (api.video_get_mode)();
+            if x >= video_mode.horizontal_pixels() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            }
+            if y >= video_mode.vertical_lines() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            }
+            // our video line starts here
+            let line_start =
+                unsafe { fb_ptr.byte_add(video_mode.line_size_bytes() * (y as usize)) } as *mut u8;
+            let result = match video_mode.format() {
+                // neotron_common_bios::video::Format::Chunky32 unsupported
+                // neotron_common_bios::video::Format::Chunky16 unsupported
+                neotron_common_bios::video::Format::Chunky8 => {
+                    chunky_plot::<8>(line_start, x, colour)
+                }
+                neotron_common_bios::video::Format::Chunky4 => {
+                    chunky_plot::<4>(line_start, x, colour)
+                }
+                neotron_common_bios::video::Format::Chunky2 => {
+                    chunky_plot::<2>(line_start, x, colour)
+                }
+                neotron_common_bios::video::Format::Chunky1 => {
+                    chunky_plot::<1>(line_start, x, colour)
+                }
+                _ => Err(neotron_api::Error::BadHandle),
+            };
+            result.into()
+        }
+        _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
+    }
+}
+
+/// Plot a single pixel.
+fn chunky_plot<const BPP: u8>(
+    line_start: *mut u8,
+    x: u16,
+    colour: u32,
+) -> Result<u64, neotron_api::Error> {
+    // this is 8, 4, 2 or 1
+    let pixels_per_byte = 8 / BPP;
+    // pick a byte in the line
+    let byte_ptr = unsafe { line_start.add(x as usize / pixels_per_byte as usize) };
+    // load the byte
+    let mut byte = unsafe { byte_ptr.read() };
+    // this is pixels_per_byte-1 to 0, because the left hand pixel has the upper-most bits
+    let pixel_in_byte = (pixels_per_byte - 1) - (x % pixels_per_byte as u16) as u8;
+    // This is 2, 4, 16 or 256
+    let num_colours = (1 << BPP) as u32;
+    // this is 0b1, 0b11, 0xF or 0xFF
+    let pixel_mask = num_colours - 1;
+    // this marks the pixels of interest
+    let shifted_pixel_mask = (pixel_mask << (pixel_in_byte * BPP)) as u8;
+    // cap the colour
+    let shifted_new_colour = ((colour & pixel_mask) << (pixel_in_byte * BPP)) as u8;
+    // zero out the old colour
+    byte &= !shifted_pixel_mask;
+    // set the new colour
+    byte |= shifted_new_colour;
+    // write it back
+    unsafe {
+        byte_ptr.write(byte);
+    }
+    Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunky1_test() {
+        let mut buffer = vec![0x00u8; (640 / 8) + 1];
+
+        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b1000_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 1, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 8, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 15, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b1000_0001, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 15, 0).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+    }
+
+    #[test]
+    fn chunky2_test() {
+        let mut buffer = vec![0x00u8; (640 / 4) + 1];
+
+        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 1, 2).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0110_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 1, 3).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0111_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 4, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0111_0000, 0b0100_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 7, 3).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0111_0000, 0b0100_0011, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+    }
+
+    #[test]
+    fn chunky4_test() {
+        let mut buffer = vec![0x00u8; (640 / 2) + 1];
+
+        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 1, 2).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0010, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 1, 3).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0011, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 4, 1).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 7, 15).unwrap();
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_1111],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+    }
+
+    #[test]
+    fn chunky8_test() {
+        let mut buffer = vec![0x00u8; 641];
+
+        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        assert_eq!(&buffer[0..4], [1, 0, 0, 0]);
+
+        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 1, 2).unwrap();
+        assert_eq!(&buffer[0..4], [1, 2, 0, 0]);
+
+        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 1, 255).unwrap();
+        assert_eq!(&buffer[0..4], [1, 255, 0, 0]);
+
+        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 3, 127).unwrap();
+        assert_eq!(&buffer[0..4], [1, 255, 0, 127],);
+
+        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 3, 255).unwrap();
+        assert_eq!(&buffer[0..4], [1, 255, 0, 255],);
+    }
+}
 
 // ===========================================================================
 // End of file
