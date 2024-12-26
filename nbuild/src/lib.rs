@@ -28,13 +28,21 @@ pub enum PackageKind {
     NBuild,
 }
 
+/// Can this package be tested?
+#[derive(Debug, PartialEq, Eq)]
+pub enum Testable {
+    No,
+    All,
+    Libs,
+}
+
 /// Describes a package in this repository
 #[derive(Debug)]
 pub struct Package {
     pub name: &'static str,
     pub path: &'static std::path::Path,
     pub kind: PackageKind,
-    pub testable: bool,
+    pub testable: Testable,
     pub output_template: Option<&'static str>,
 }
 
@@ -98,7 +106,7 @@ where
     }
     command_line.arg("--manifest-path");
     command_line.arg(manifest_path.as_ref());
-    for (k, v) in environment.into_iter() {
+    for (k, v) in environment.iter() {
         command_line.env(k, v);
     }
 

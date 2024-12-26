@@ -47,21 +47,21 @@ fn packages() -> Vec<nbuild::Package> {
             path: std::path::Path::new("./nbuild/Cargo.toml"),
             output_template: None,
             kind: nbuild::PackageKind::NBuild,
-            testable: true,
+            testable: nbuild::Testable::All,
         },
         nbuild::Package {
             name: "flames",
             path: std::path::Path::new("./utilities/flames/Cargo.toml"),
             output_template: Some("./target/{target}/{profile}/flames"),
             kind: nbuild::PackageKind::Utility,
-            testable: false,
+            testable: nbuild::Testable::No,
         },
         nbuild::Package {
             name: "Neotron OS",
             path: std::path::Path::new("./neotron-os/Cargo.toml"),
             output_template: Some("./target/{target}/{profile}/neotron-os"),
             kind: nbuild::PackageKind::Os,
-            testable: false,
+            testable: nbuild::Testable::Libs,
         },
     ]
 }
@@ -265,7 +265,20 @@ fn clippy(packages: &[nbuild::Package]) {
 /// Runs `cargo test` over all the packages
 fn test(packages: &[nbuild::Package]) {
     let mut is_error = false;
-    for package in packages.iter().filter(|p| p.testable) {
+    for package in packages
+        .iter()
+        .filter(|p| p.testable == nbuild::Testable::Libs)
+    {
+        println!("Testing {}", package.name);
+        if let Err(e) = nbuild::cargo(&["test", "--lib"], None, package.path) {
+            eprintln!("Test failed: {}", e);
+            is_error = true;
+        }
+    }
+    for package in packages
+        .iter()
+        .filter(|p| p.testable == nbuild::Testable::All)
+    {
         println!("Testing {}", package.name);
         if let Err(e) = nbuild::cargo(&["test"], None, package.path) {
             eprintln!("Test failed: {}", e);
