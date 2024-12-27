@@ -42,7 +42,7 @@ fn real_main() -> Result<(), neotron_sdk::Error> {
     // Set 16-bit stereo, 44.1 kHz
     let dsp_path = neotron_sdk::path::Path::new("AUDIO:")?;
     let dsp = neotron_sdk::File::open(dsp_path, neotron_sdk::Flags::empty())?;
-    if dsp.ioctl(1, 3 << 60 | 44100).is_err() {
+    if unsafe { dsp.ioctl(1, 3 << 60 | 44100).is_err() } {
         let _ = writeln!(stdout, "Failed to configure audio");
         return neotron_sdk::Result::Err(neotron_sdk::Error::DeviceSpecific);
     }

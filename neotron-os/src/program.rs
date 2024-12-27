@@ -302,6 +302,11 @@ impl TransientProgramArea {
             return Err(Error::NothingLoaded);
         }
 
+        // Record the current video mode
+        let api = API.get();
+        let old_mode = (api.video_get_mode)();
+        let old_ptr = (api.video_get_framebuffer)();
+
         // Setup the default file handles
         let mut open_handles = OPEN_HANDLES.lock();
         open_handles[0] = OpenHandle::StdIn;
@@ -331,6 +336,12 @@ impl TransientProgramArea {
             *h = OpenHandle::Closed;
         }
         drop(open_handles);
+
+        let mut lock = crate::VGA_CONSOLE.lock();
+        if let Some(console) = lock.as_mut() {
+            // put the video mode back as it was
+            let _ = unsafe { console.change_mode(old_mode, old_ptr) };
+        }
 
         self.last_entry = 0;
         Ok(result)
@@ -795,6 +806,16 @@ pub const GFX_COMMAND_CLEAR_SCREEN: u64 = 0;
 /// * `colour` is 24 bits, and is taken modulo the number of on-screen colours
 pub const GFX_COMMAND_CHUNKY_PLOT: u64 = 1;
 
+/// Change graphics mode
+///
+/// The command contains the video mode in the upper 32 bits and a pointer to a
+/// framebuffer in the lower 32 bits.
+///
+/// The framebuffer pointer must point to a 32-bit aligned region of memory
+/// that is large enough for the selected mode. If you pass `null`, then the OS
+/// will attempt to allocate a framebuffer for you.
+pub const GFX_COMMAND_CHANGE_MODE: u64 = 2;
+
 /// Handle framebuffer-specific ioctls
 fn ioctl_gfx(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Result<u64> {
     let api = API.get();
@@ -852,6 +873,9 @@ fn ioctl_gfx(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Resu
             if y >= video_mode.vertical_lines() {
                 return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
             }
+            if fb_ptr.is_null() {
+                return neotron_api::Result::Err(neotron_api::Error::NotFound);
+            }
             // our video line starts here
             let line_start =
                 unsafe { fb_ptr.byte_add(video_mode.line_size_bytes() * (y as usize)) } as *mut u8;
@@ -873,6 +897,24 @@ fn ioctl_gfx(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Resu
                 _ => Err(neotron_api::Error::BadHandle),
             };
             result.into()
+        }
+        GFX_COMMAND_CHANGE_MODE => {
+            let mode = (value >> 32) as u8;
+            let Some(mode) = neotron_common_bios::video::Mode::try_from_u8(mode) else {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            };
+            let ptr = value as u32 as usize as *mut u32;
+            let mut lock = crate::VGA_CONSOLE.lock();
+            if let Some(console) = lock.as_mut() {
+                // change the video mode
+                match unsafe { console.change_mode(mode, ptr) } {
+                    Ok(_) => neotron_api::Result::Ok(0),
+                    Err(_) => neotron_api::Result::Err(neotron_api::Error::DeviceSpecific),
+                }
+            } else {
+                // there is no console to change the mode for
+                neotron_api::Result::Err(neotron_api::Error::NotFound)
+            }
         }
         _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
     }

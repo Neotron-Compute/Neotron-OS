@@ -73,13 +73,36 @@ impl VgaConsole {
 
     /// Change the video mode
     ///
-    /// Non text modes are ignored.
-    pub fn change_mode(&mut self, mode: Mode) {
+    /// The `fb_ptr` is given to the BIOS. It can be null, or it must point to a
+    /// region big enough to handle the chosen graphics mode.
+    pub unsafe fn change_mode(
+        &mut self,
+        mode: Mode,
+        fb_ptr: *mut u32,
+    ) -> Result<(), neotron_common_bios::Error> {
+        // TODO: support bitmap text rendering whilst in graphics mode
+
+        // Change mode with the BIOS and return the result
+        let api = crate::API.get();
+        if let neotron_common_bios::FfiResult::Err(e) = (api.video_set_mode)(mode, fb_ptr) {
+            return Err(e);
+        }
+        // set up the console for this mode
         if let (Some(height), Some(width)) = (mode.text_height(), mode.text_width()) {
+            // it's a text mode
             self.inner.height = height as isize;
             self.inner.width = width as isize;
+            // get whatever buffer the BIOS chose to use
+            self.inner.addr = (api.video_get_framebuffer)();
             self.clear();
+        } else {
+            // it's a graphics mode - disable output
+            self.inner.height = 0;
+            self.inner.width = 0;
+            self.inner.addr = core::ptr::null_mut();
         }
+
+        Ok(())
     }
 
     /// Clear the screen.
@@ -245,6 +268,10 @@ impl ConsoleInner {
     ///
     /// Don't do this if the cursor is enabled.
     fn write_at(&mut self, row: isize, col: isize, glyph: u8, is_cursor: bool) {
+        if self.addr.is_null() {
+            // console disabled
+            return;
+        }
         assert!(row < self.height, "{} >= {}?", row, self.height);
         assert!(col < self.width, "{} => {}?", col, self.width);
         if !crate::IS_PANIC.load(core::sync::atomic::Ordering::Relaxed) && !is_cursor {
@@ -276,6 +303,10 @@ impl ConsoleInner {
     ///
     /// Don't do this if the cursor is enabled.
     fn read_at(&mut self, row: isize, col: isize) -> u8 {
+        if self.addr.is_null() {
+            // console disabled - everything is a blank space
+            return b' ';
+        }
         assert!(row < self.height, "{} >= {}?", row, self.height);
         assert!(col < self.width, "{} => {}?", col, self.width);
         if !crate::IS_PANIC.load(core::sync::atomic::Ordering::Relaxed) {
@@ -290,6 +321,10 @@ impl ConsoleInner {
     ///
     /// The bottom line will be all space characters.
     fn scroll_page(&mut self) {
+        if self.height == 0 && self.width == 0 {
+            // console disabled
+            return;
+        }
         let row_len_words = self.width / 2;
         unsafe {
             // Scroll rows[1..=height-1] to become rows[0..=height-2].

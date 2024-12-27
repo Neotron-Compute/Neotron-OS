@@ -72,6 +72,13 @@ fn packages() -> Vec<nbuild::Package> {
             kind: nbuild::PackageKind::Utility,
             testable: nbuild::Testable::No,
         },
+        nbuild::Package {
+            name: "vidtest",
+            path: std::path::Path::new("./utilities/vidtest/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/vidtest"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
         // *** OS ***
         nbuild::Package {
             name: "Neotron OS",
