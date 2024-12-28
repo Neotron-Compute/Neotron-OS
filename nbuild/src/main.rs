@@ -52,9 +52,23 @@ fn packages() -> Vec<nbuild::Package> {
         },
         // *** utilities ***
         nbuild::Package {
+            name: "desktop",
+            path: std::path::Path::new("./utilities/desktop/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/desktop"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
+        nbuild::Package {
             name: "flames",
             path: std::path::Path::new("./utilities/flames/Cargo.toml"),
             output_template: Some("./target/{target}/{profile}/flames"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
+        nbuild::Package {
+            name: "logo",
+            path: std::path::Path::new("./utilities/logo/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/logo"),
             kind: nbuild::PackageKind::Utility,
             testable: nbuild::Testable::No,
         },

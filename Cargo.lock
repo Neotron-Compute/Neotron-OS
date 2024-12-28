@@ -94,6 +94,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "desktop"
+version = "0.1.0"
+dependencies = [
+ "neotron-sdk",
+]
+
+[[package]]
 name = "embedded-hal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -170,6 +177,13 @@ name = "log"
 version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
+
+[[package]]
+name = "logo"
+version = "0.1.0"
+dependencies = [
+ "neotron-sdk",
+]
 
 [[package]]
 name = "menu"
@@ -277,7 +291,7 @@ dependencies = [
 [[package]]
 name = "neotron-sdk"
 version = "0.2.0"
-source = "git+https://github.com/neotron-compute/neotron-sdk.git?branch=add-gfx-ioctl-defines#49509fce305a4d7cf956dcfcaba06a06a307fd7e"
+source = "git+https://github.com/neotron-compute/neotron-sdk.git?branch=add-gfx-ioctl-defines#dc84465052e22328eb9526ba1edd93670228c5ee"
 dependencies = [
  "crossterm",
  "neotron-api 0.2.0",

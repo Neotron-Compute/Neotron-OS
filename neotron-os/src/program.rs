@@ -850,6 +850,16 @@ pub const GFX_COMMAND_MOVE_CURSOR: u64 = 3;
 /// The start position is the cursor position. The cursor is updated to the final position.
 pub const GFX_COMMAND_DRAW_LINE: u64 = 4;
 
+/// Set a palette entry
+///
+/// The command contains [ <padding> | II | RR | GG | BB ]
+///
+/// II, RR, GG and BB are 8-bit values where II is the index into the 256 long
+/// palette, and RR, GG and BB are the 24-bit RGB colour for that index.
+///
+/// Use [`set_palette_value`] to construct a value.
+pub const GFX_COMMAND_SET_PALETTE: u64 = 5;
+
 /// Handle framebuffer-specific ioctls
 fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Result<u64> {
     let mut lock = crate::VGA_CONSOLE.lock();
@@ -1001,6 +1011,14 @@ fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Res
 
             state.cursor_x = new_x;
             state.cursor_y = new_y;
+            neotron_api::Result::Ok(0)
+        }
+        GFX_COMMAND_SET_PALETTE => {
+            let index = (value >> 24) as u8;
+            let rgb_packed = (value & 0xFFFFFF) as u32;
+            let api = crate::API.get();
+            let rgb_colour = neotron_common_bios::video::RGBColour::from_packed(rgb_packed);
+            (api.video_set_palette)(index, rgb_colour);
             neotron_api::Result::Ok(0)
         }
         _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
