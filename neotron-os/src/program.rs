@@ -46,7 +46,22 @@ pub enum OpenHandle {
     /// Represents the audio device,
     Audio,
     /// Represents the framebuffer device
-    Gfx,
+    Gfx(GfxState),
+}
+
+/// State for when writing to a graphics device
+pub struct GfxState {
+    cursor_x: u16,
+    cursor_y: u16,
+}
+
+impl GfxState {
+    fn new() -> GfxState {
+        GfxState {
+            cursor_x: 0,
+            cursor_y: 0,
+        }
+    }
 }
 
 /// The open handle table
@@ -304,6 +319,7 @@ impl TransientProgramArea {
 
         // Record the current video mode
         let api = API.get();
+        // TODO: Use VgaConsole to do this?
         let old_mode = (api.video_get_mode)();
         let old_ptr = (api.video_get_framebuffer)();
 
@@ -413,7 +429,8 @@ extern "C" fn api_open(
         }
     }
     if path.as_str().eq_ignore_ascii_case("GFX:") {
-        match allocate_handle(OpenHandle::Gfx) {
+        let initial_state = GfxState::new();
+        match allocate_handle(OpenHandle::Gfx(initial_state)) {
             Ok(n) => {
                 return neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8));
             }
@@ -501,7 +518,7 @@ extern "C" fn api_write(
         OpenHandle::StdIn | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
         }
-        OpenHandle::Gfx => {
+        OpenHandle::Gfx(_state) => {
             // TODO: Allow users to write to the screen
             neotron_api::Result::Err(neotron_api::Error::Unimplemented)
         }
@@ -550,7 +567,7 @@ extern "C" fn api_read(
         OpenHandle::Stdout | OpenHandle::StdErr | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
         }
-        OpenHandle::Gfx => {
+        OpenHandle::Gfx(_state) => {
             // TODO: allow users to read the contents of the screen
             neotron_api::Result::Err(neotron_api::Error::Unimplemented)
         }
@@ -616,7 +633,7 @@ extern "C" fn api_ioctl(
     };
     match h {
         OpenHandle::Audio => ioctl_audio(h, command, value),
-        OpenHandle::Gfx => ioctl_gfx(h, command, value),
+        OpenHandle::Gfx(state) => ioctl_gfx(state, command, value),
         _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
     }
 }
@@ -816,14 +833,35 @@ pub const GFX_COMMAND_CHUNKY_PLOT: u64 = 1;
 /// will attempt to allocate a framebuffer for you.
 pub const GFX_COMMAND_CHANGE_MODE: u64 = 2;
 
+/// Move the cursor
+///
+/// The command contains [ x | y | <padding> ].
+pub const GFX_COMMAND_MOVE_CURSOR: u64 = 3;
+
+/// Draw a line
+///
+/// The command contains [ x | y | mode | colour ].
+///
+/// * `x` is 16 bits and marks the final horizontal position (0 is left)
+/// * `y` is 16 bits and marks the final vertical position (0 is top)
+/// * `mode` is 8 bits and is currently ignored
+/// * `colour` is 24 bits, and is taken modulo the number of on-screen colours
+///
+/// The start position is the cursor position. The cursor is updated to the final position.
+pub const GFX_COMMAND_DRAW_LINE: u64 = 4;
+
 /// Handle framebuffer-specific ioctls
-fn ioctl_gfx(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Result<u64> {
-    let api = API.get();
+fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Result<u64> {
+    let mut lock = crate::VGA_CONSOLE.lock();
+    let Some(console) = lock.as_mut() else {
+        // there is no graphics console
+        return neotron_api::Result::Err(neotron_api::Error::NotFound);
+    };
     match command {
         GFX_COMMAND_CLEAR_SCREEN => {
             let colour = (value & 0xFFFFFF) as u32;
-            let fb_ptr = (api.video_get_framebuffer)();
-            let video_mode = (api.video_get_mode)();
+            let fb_ptr = console.get_fb();
+            let video_mode = console.get_mode();
             let pixel_byte = match video_mode.format() {
                 // neotron_common_bios::video::Format::Chunky32 unsupported
                 // neotron_common_bios::video::Format::Chunky16 unsupported
@@ -865,8 +903,8 @@ fn ioctl_gfx(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Resu
             let _mode = (value >> 24) as u8;
             // the colour to use
             let colour = (value & 0xFFFFFF) as u32;
-            let fb_ptr = (api.video_get_framebuffer)();
-            let video_mode = (api.video_get_mode)();
+            let fb_ptr = console.get_fb();
+            let video_mode = console.get_mode();
             if x >= video_mode.horizontal_pixels() {
                 return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
             }
@@ -879,53 +917,146 @@ fn ioctl_gfx(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Resu
             // our video line starts here
             let line_start =
                 unsafe { fb_ptr.byte_add(video_mode.line_size_bytes() * (y as usize)) } as *mut u8;
-            let result = match video_mode.format() {
+            let chunky_plot_func = match video_mode.format() {
                 // neotron_common_bios::video::Format::Chunky32 unsupported
                 // neotron_common_bios::video::Format::Chunky16 unsupported
-                neotron_common_bios::video::Format::Chunky8 => {
-                    chunky_plot::<8>(line_start, x, colour)
+                neotron_common_bios::video::Format::Chunky8 => chunky_plot::<8>,
+                neotron_common_bios::video::Format::Chunky4 => chunky_plot::<4>,
+                neotron_common_bios::video::Format::Chunky2 => chunky_plot::<2>,
+                neotron_common_bios::video::Format::Chunky1 => chunky_plot::<1>,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
                 }
-                neotron_common_bios::video::Format::Chunky4 => {
-                    chunky_plot::<4>(line_start, x, colour)
-                }
-                neotron_common_bios::video::Format::Chunky2 => {
-                    chunky_plot::<2>(line_start, x, colour)
-                }
-                neotron_common_bios::video::Format::Chunky1 => {
-                    chunky_plot::<1>(line_start, x, colour)
-                }
-                _ => Err(neotron_api::Error::BadHandle),
             };
-            result.into()
+            unsafe {
+                chunky_plot_func(line_start, x, colour);
+            }
+            neotron_api::Result::Ok(0)
         }
         GFX_COMMAND_CHANGE_MODE => {
-            let mode = (value >> 32) as u8;
-            let Some(mode) = neotron_common_bios::video::Mode::try_from_u8(mode) else {
+            let video_mode = (value >> 32) as u8;
+            let Some(video_mode) = neotron_common_bios::video::Mode::try_from_u8(video_mode) else {
                 return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
             };
             let ptr = value as u32 as usize as *mut u32;
-            let mut lock = crate::VGA_CONSOLE.lock();
-            if let Some(console) = lock.as_mut() {
-                // change the video mode
-                match unsafe { console.change_mode(mode, ptr) } {
-                    Ok(_) => neotron_api::Result::Ok(0),
-                    Err(_) => neotron_api::Result::Err(neotron_api::Error::DeviceSpecific),
-                }
-            } else {
-                // there is no console to change the mode for
-                neotron_api::Result::Err(neotron_api::Error::NotFound)
+            // change the video mode
+            if unsafe { console.change_mode(video_mode, ptr) }.is_err() {
+                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+            };
+            // reset cursor on screen mode change
+            state.cursor_x = 0;
+            state.cursor_y = 0;
+            neotron_api::Result::Ok(0)
+        }
+        GFX_COMMAND_MOVE_CURSOR => {
+            let video_mode = console.get_mode();
+            let new_x = (value >> 48) as u16;
+            let new_y = (value >> 32) as u16;
+            if new_x >= video_mode.horizontal_pixels() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
             }
+            if new_y >= video_mode.vertical_lines() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            }
+            state.cursor_x = new_x;
+            state.cursor_y = new_y;
+            neotron_api::Result::Ok(0)
+        }
+        GFX_COMMAND_DRAW_LINE => {
+            let video_mode = console.get_mode();
+            let fb_ptr = console.get_fb();
+            let stride = video_mode.line_size_bytes();
+            let new_x = (value >> 48) as u16;
+            let new_y = (value >> 32) as u16;
+            let colour = (value & 0xFFFFFF) as u32;
+            if new_x >= video_mode.horizontal_pixels() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            }
+            if new_y >= video_mode.vertical_lines() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            }
+            // Adapted from https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm#All_cases
+            let plot_line_func = match video_mode.format() {
+                // neotron_common_bios::video::Format::Chunky32 unsupported
+                // neotron_common_bios::video::Format::Chunky16 unsupported
+                neotron_common_bios::video::Format::Chunky8 => plot_line::<8>,
+                neotron_common_bios::video::Format::Chunky4 => plot_line::<4>,
+                neotron_common_bios::video::Format::Chunky2 => plot_line::<2>,
+                neotron_common_bios::video::Format::Chunky1 => plot_line::<1>,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+                }
+            };
+            unsafe {
+                plot_line_func(
+                    fb_ptr as *mut u8,
+                    stride,
+                    state.cursor_x as i16,
+                    state.cursor_y as i16,
+                    new_x as i16,
+                    new_y as i16,
+                    colour,
+                )
+            }
+
+            state.cursor_x = new_x;
+            state.cursor_y = new_y;
+            neotron_api::Result::Ok(0)
         }
         _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
     }
 }
 
-/// Plot a single pixel.
-fn chunky_plot<const BPP: u8>(
-    line_start: *mut u8,
-    x: u16,
+/// Plot a line
+///
+/// # Safety
+///
+/// Ensure `fb_ptr` points to a buffer that is at least `stride * (y_max + 1)`
+/// bytes long, where `y_max` is the larger of `y0` and `y1`.
+unsafe fn plot_line<const BPP: u8>(
+    fb_ptr: *mut u8,
+    stride: usize,
+    mut x0: i16,
+    mut y0: i16,
+    x1: i16,
+    y1: i16,
     colour: u32,
-) -> Result<u64, neotron_api::Error> {
+) {
+    let dx = x1.abs_diff(x0) as i16;
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1.abs_diff(y0) as i16);
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let line_offset = if y0 < y1 {
+        stride as isize
+    } else {
+        -(stride as isize)
+    };
+    let mut error = dx + dy;
+    let mut line_start = unsafe { fb_ptr.add(stride * y0 as usize) };
+    loop {
+        chunky_plot::<BPP>(line_start, x0 as u16, colour);
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let e2 = error * 2;
+        if e2 >= dy {
+            error += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            error += dx;
+            y0 += sy;
+            line_start = line_start.offset(line_offset);
+        }
+    }
+}
+
+/// Plot a single pixel.
+///
+/// # Safety
+///
+/// Ensure `line_start` points to a buffer that is at least `x * BPP / 8` bytes long.
+unsafe fn chunky_plot<const BPP: u8>(line_start: *mut u8, x: u16, colour: u32) {
     // this is 8, 4, 2 or 1
     let pixels_per_byte = 8 / BPP;
     // pick a byte in the line
@@ -950,7 +1081,6 @@ fn chunky_plot<const BPP: u8>(
     unsafe {
         byte_ptr.write(byte);
     }
-    Ok(0)
 }
 
 #[cfg(test)]
@@ -961,7 +1091,7 @@ mod tests {
     fn chunky1_test() {
         let mut buffer = vec![0x00u8; (640 / 8) + 1];
 
-        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 0, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b1000_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -969,7 +1099,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 1, 1).unwrap();
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 1, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b1100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -977,7 +1107,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 8, 1).unwrap();
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 8, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
@@ -985,7 +1115,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 15, 1).unwrap();
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 15, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b1100_0000, 0b1000_0001, 0b0000_0000, 0b0000_0000],
@@ -993,7 +1123,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<1>(buffer.as_mut_ptr(), 15, 0).unwrap();
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 15, 0) };
         assert_eq!(
             &buffer[0..4],
             [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
@@ -1006,7 +1136,7 @@ mod tests {
     fn chunky2_test() {
         let mut buffer = vec![0x00u8; (640 / 4) + 1];
 
-        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 0, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b0100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -1014,7 +1144,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 1, 2).unwrap();
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 1, 2) };
         assert_eq!(
             &buffer[0..4],
             [0b0110_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -1022,7 +1152,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 1, 3).unwrap();
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 1, 3) };
         assert_eq!(
             &buffer[0..4],
             [0b0111_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -1030,7 +1160,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 4, 1).unwrap();
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 4, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b0111_0000, 0b0100_0000, 0b0000_0000, 0b0000_0000],
@@ -1038,7 +1168,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<2>(buffer.as_mut_ptr(), 7, 3).unwrap();
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 7, 3) };
         assert_eq!(
             &buffer[0..4],
             [0b0111_0000, 0b0100_0011, 0b0000_0000, 0b0000_0000],
@@ -1051,7 +1181,7 @@ mod tests {
     fn chunky4_test() {
         let mut buffer = vec![0x00u8; (640 / 2) + 1];
 
-        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 0, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b0001_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -1059,7 +1189,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 1, 2).unwrap();
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 1, 2) };
         assert_eq!(
             &buffer[0..4],
             [0b0001_0010, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -1067,7 +1197,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 1, 3).unwrap();
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 1, 3) };
         assert_eq!(
             &buffer[0..4],
             [0b0001_0011, 0b0000_0000, 0b0000_0000, 0b0000_0000],
@@ -1075,7 +1205,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 4, 1).unwrap();
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 4, 1) };
         assert_eq!(
             &buffer[0..4],
             [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_0000],
@@ -1083,7 +1213,7 @@ mod tests {
             &buffer[0..4]
         );
 
-        _ = chunky_plot::<4>(buffer.as_mut_ptr(), 7, 15).unwrap();
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 7, 15) };
         assert_eq!(
             &buffer[0..4],
             [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_1111],
@@ -1096,19 +1226,19 @@ mod tests {
     fn chunky8_test() {
         let mut buffer = vec![0x00u8; 641];
 
-        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 0, 1).unwrap();
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 0, 1) };
         assert_eq!(&buffer[0..4], [1, 0, 0, 0]);
 
-        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 1, 2).unwrap();
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 1, 2) };
         assert_eq!(&buffer[0..4], [1, 2, 0, 0]);
 
-        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 1, 255).unwrap();
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 1, 255) };
         assert_eq!(&buffer[0..4], [1, 255, 0, 0]);
 
-        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 3, 127).unwrap();
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 3, 127) };
         assert_eq!(&buffer[0..4], [1, 255, 0, 127],);
 
-        _ = chunky_plot::<8>(buffer.as_mut_ptr(), 3, 255).unwrap();
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 3, 255) };
         assert_eq!(&buffer[0..4], [1, 255, 0, 255],);
     }
 }

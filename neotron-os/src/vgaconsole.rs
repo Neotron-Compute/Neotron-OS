@@ -125,6 +125,18 @@ impl VgaConsole {
         }
         self.inner.cursor_enable();
     }
+
+    /// Get the current video mode
+    pub fn get_mode(&self) -> Mode {
+        let api = crate::API.get();
+        (api.video_get_mode)()
+    }
+
+    /// Get the framebuffer pointer
+    pub fn get_fb(&self) -> *mut u32 {
+        let api = crate::API.get();
+        (api.video_get_framebuffer)()
+    }
 }
 
 // ===========================================================================

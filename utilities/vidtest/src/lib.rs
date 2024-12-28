@@ -61,85 +61,59 @@ pub fn main() -> i32 {
             _ = writeln!(stdout, "Mode change failure: {:?}", e);
             return -1;
         }
-        if let Err(e) = vertical(&handle, mode) {
-            _ = writeln!(stdout, "Draw failure on vertical: {:?}", e);
-        }
-        if let Err(e) = horizontal(&handle, mode) {
-            _ = writeln!(stdout, "Draw failure on horizontal: {:?}", e);
-        }
-        if let Err(e) = rolling(&handle, mode) {
-            _ = writeln!(stdout, "Draw failure on rolling: {:?}", e);
-        }
         if let Err(e) = grid(&handle, mode) {
             _ = writeln!(stdout, "Draw failure on grid: {:?}", e);
+        }
+        if let Err(e) = stripes(&handle, mode) {
+            _ = writeln!(stdout, "Draw failure on stripes: {:?}", e);
+        }
+        if let Err(e) = radial(&handle, mode) {
+            _ = writeln!(stdout, "Draw failure on radial: {:?}", e);
         }
     }
 
     0
 }
 
-/// plots a vertical colour stripe pattern.
-fn vertical(
+/// plots some horizontal stripes, with all the colours
+fn stripes(
     handle: &neotron_sdk::File,
     mode: neotron_sdk::VideoMode,
 ) -> Result<(), neotron_sdk::Error> {
+    let bpp = match mode.format() {
+        neotron_sdk::VideoFormat::Chunky8 => 8,
+        neotron_sdk::VideoFormat::Chunky4 => 4,
+        neotron_sdk::VideoFormat::Chunky2 => 2,
+        neotron_sdk::VideoFormat::Chunky1 => 1,
+        _ => return Err(neotron_sdk::Error::InvalidArg),
+    };
+    let colours = 1 << bpp;
+    let height = mode.vertical_lines();
+    let stripe_height = (height / (2 * colours)).max(1);
+    let mut colour_iter = (0..colours).cycle();
+    let mut stripe_so_far = 0;
+    let mut colour = colour_iter.next().unwrap();
     for y in 0..mode.vertical_lines() {
-        let mut colour = 0u32;
-        for x in 0..mode.horizontal_pixels() {
-            unsafe {
-                handle.ioctl(
-                    neotron_sdk::ioctls::gfx::COMMAND_CHUNKY_PLOT,
-                    neotron_sdk::ioctls::gfx::chunky_plot_value(x, y, colour),
-                )?;
-            }
-
-            colour = colour.wrapping_add(1) & 0xFFFFFF;
-        }
-    }
-
-    wait_for_key();
-
-    Ok(())
-}
-
-/// plots a horizontal colour stripe pattern.
-fn horizontal(
-    handle: &neotron_sdk::File,
-    mode: neotron_sdk::VideoMode,
-) -> Result<(), neotron_sdk::Error> {
-    let mut colour = 0u32;
-    for y in 0..mode.vertical_lines() {
-        for x in 0..mode.horizontal_pixels() {
-            unsafe {
-                handle.ioctl(
-                    neotron_sdk::ioctls::gfx::COMMAND_CHUNKY_PLOT,
-                    neotron_sdk::ioctls::gfx::chunky_plot_value(x, y, colour),
-                )?;
-            }
-        }
-        colour = colour.wrapping_add(1) & 0xFFFFFF;
-    }
-
-    wait_for_key();
-
-    Ok(())
-}
-
-/// plots a rolling stripe pattern.
-fn rolling(
-    handle: &neotron_sdk::File,
-    mode: neotron_sdk::VideoMode,
-) -> Result<(), neotron_sdk::Error> {
-    for y in 0..mode.vertical_lines() {
-        let mut colour = y as u32;
-        for x in 0..mode.horizontal_pixels() {
-            unsafe {
-                handle.ioctl(
-                    neotron_sdk::ioctls::gfx::COMMAND_CHUNKY_PLOT,
-                    neotron_sdk::ioctls::gfx::chunky_plot_value(x, y, colour),
-                )?;
-            }
-            colour = colour.wrapping_add(1) & 0xFFFFFF;
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_MOVE_CURSOR,
+                neotron_sdk::ioctls::gfx::move_cursor_value(0, y),
+            )
+        }?;
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_DRAW_LINE,
+                neotron_sdk::ioctls::gfx::draw_line_value(
+                    mode.horizontal_pixels() - 1,
+                    y,
+                    colour as u32,
+                ),
+            )
+        }?;
+        stripe_so_far += 1;
+        if stripe_so_far == stripe_height {
+            stripe_so_far = 0;
+            colour = colour_iter.next().unwrap();
         }
     }
 
@@ -157,31 +131,111 @@ fn grid(
 
     let width = mode.horizontal_pixels() / 10;
     let height = mode.vertical_lines() / 10;
+    let y_max = mode.vertical_lines() - 1;
+    let x_max = mode.horizontal_pixels() - 1;
+    let colour = 15;
 
-    for y in 0..mode.vertical_lines() {
-        if (y % height) == 0 || (y == mode.vertical_lines() - 1) {
-            // solid line
-            for x in 0..mode.horizontal_pixels() {
-                unsafe {
-                    handle.ioctl(
-                        neotron_sdk::ioctls::gfx::COMMAND_CHUNKY_PLOT,
-                        neotron_sdk::ioctls::gfx::chunky_plot_value(x, y, 15),
-                    )?;
-                }
-            }
-        } else {
-            // stripes
-            for x in 0..mode.horizontal_pixels() {
-                if (x % width) == 0 || (x == mode.horizontal_pixels() - 1) {
-                    unsafe {
-                        handle.ioctl(
-                            neotron_sdk::ioctls::gfx::COMMAND_CHUNKY_PLOT,
-                            neotron_sdk::ioctls::gfx::chunky_plot_value(x, y, 15),
-                        )?;
-                    }
-                }
-            }
-        }
+    // Horizontal
+    for y in (0..mode.vertical_lines())
+        .filter(|&y| (y % height) == 0 || (y == mode.vertical_lines() - 1))
+    {
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_MOVE_CURSOR,
+                neotron_sdk::ioctls::gfx::move_cursor_value(0, y),
+            )
+        }?;
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_DRAW_LINE,
+                neotron_sdk::ioctls::gfx::draw_line_value(x_max, y, colour),
+            )
+        }?;
+    }
+
+    // Vertical
+    for x in (0..mode.horizontal_pixels())
+        .filter(|&x| (x % width) == 0 || (x == mode.horizontal_pixels() - 1))
+    {
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_MOVE_CURSOR,
+                neotron_sdk::ioctls::gfx::move_cursor_value(x, 0),
+            )
+        }?;
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_DRAW_LINE,
+                neotron_sdk::ioctls::gfx::draw_line_value(x, y_max, colour),
+            )
+        }?;
+    }
+
+    wait_for_key();
+
+    Ok(())
+}
+
+/// plots a radial pattern
+fn radial(
+    handle: &neotron_sdk::File,
+    mode: neotron_sdk::VideoMode,
+) -> Result<(), neotron_sdk::Error> {
+    unsafe { handle.ioctl(neotron_sdk::ioctls::gfx::COMMAND_CLEAR_SCREEN, 0) }?;
+
+    let mut colour = 1;
+
+    for x in (0..mode.horizontal_pixels()).step_by(16) {
+        // plot from 0,0 to the bottom edge
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_MOVE_CURSOR,
+                neotron_sdk::ioctls::gfx::move_cursor_value(0, 0),
+            )
+        }?;
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_DRAW_LINE,
+                neotron_sdk::ioctls::gfx::draw_line_value(x, mode.vertical_lines() - 1, colour),
+            )
+        }?;
+        colour += 1;
+    }
+
+    // do the diagonal
+    unsafe {
+        handle.ioctl(
+            neotron_sdk::ioctls::gfx::COMMAND_MOVE_CURSOR,
+            neotron_sdk::ioctls::gfx::move_cursor_value(0, 0),
+        )
+    }?;
+    unsafe {
+        handle.ioctl(
+            neotron_sdk::ioctls::gfx::COMMAND_DRAW_LINE,
+            neotron_sdk::ioctls::gfx::draw_line_value(
+                mode.horizontal_pixels() - 1,
+                mode.vertical_lines() - 1,
+                colour,
+            ),
+        )
+    }?;
+    colour += 1;
+
+    for y in (0..mode.vertical_lines()).step_by(16).rev() {
+        // plot from 0,0 to the right hand edge
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_MOVE_CURSOR,
+                neotron_sdk::ioctls::gfx::move_cursor_value(0, 0),
+            )
+        }?;
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_DRAW_LINE,
+                neotron_sdk::ioctls::gfx::draw_line_value(mode.horizontal_pixels() - 1, y, colour),
+            )
+        }?;
+        colour += 1;
     }
 
     wait_for_key();
