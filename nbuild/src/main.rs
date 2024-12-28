@@ -140,10 +140,15 @@ fn binary(packages: &[nbuild::Package], start_address: &str, target: &str) {
         let package_output = package
             .output(target, "release")
             .expect("utilties should have an output");
-        let contents = match std::fs::read(&package_output) {
+        let stripped = package_output.clone() + ".stripped";
+        if let Err(e) = nbuild::strip_elf(&package_output, &stripped) {
+            eprintln!("Reading of {} failed: {}", stripped, e);
+            continue;
+        };
+        let contents = match std::fs::read(&stripped) {
             Ok(contents) => contents,
             Err(e) => {
-                eprintln!("Reading of {} failed: {}", package_output, e);
+                eprintln!("Reading of {} failed: {}", stripped, e);
                 continue;
             }
         };
