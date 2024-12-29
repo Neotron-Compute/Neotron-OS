@@ -42,6 +42,7 @@ pub struct NBuildApp {
 
 fn packages() -> Vec<nbuild::Package> {
     vec![
+        // *** build system ***
         nbuild::Package {
             name: "nbuild",
             path: std::path::Path::new("./nbuild/Cargo.toml"),
@@ -49,6 +50,7 @@ fn packages() -> Vec<nbuild::Package> {
             kind: nbuild::PackageKind::NBuild,
             testable: nbuild::Testable::All,
         },
+        // *** utilities ***
         nbuild::Package {
             name: "flames",
             path: std::path::Path::new("./utilities/flames/Cargo.toml"),
@@ -56,6 +58,21 @@ fn packages() -> Vec<nbuild::Package> {
             kind: nbuild::PackageKind::Utility,
             testable: nbuild::Testable::No,
         },
+        nbuild::Package {
+            name: "neoplay",
+            path: std::path::Path::new("./utilities/neoplay/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/neoplay"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
+        nbuild::Package {
+            name: "snake",
+            path: std::path::Path::new("./utilities/snake/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/snake"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
+        // *** OS ***
         nbuild::Package {
             name: "Neotron OS",
             path: std::path::Path::new("./neotron-os/Cargo.toml"),

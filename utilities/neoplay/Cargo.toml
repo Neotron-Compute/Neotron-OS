@@ -1,0 +1,14 @@
+[package]
+name = "neoplay"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Jonathan 'theJPster' Pallant <neotron@thejpster.org.uk>"]
+description = "4-channel ProTracker player for Neotro"
+
+[dependencies]
+grounded = { version = "0.2.0", features = ["critical-section", "cas"] }
+neotracker = { git = "https://github.com/thejpster/neotracker.git", rev = "2ee7a85006a9461b876bdf47e45b6105437a38f6" }
+neotron-sdk = { workspace = true }
+
+# See workspace for profile settings
