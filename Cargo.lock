@@ -118,6 +118,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "grounded"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "917d82402c7eb9755fdd87d52117701dae9e413a6abb309fac2a13af693b6080"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "hash32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -179,6 +188,20 @@ dependencies = [
  "wasi",
  "windows-sys",
 ]
+
+[[package]]
+name = "neoplay"
+version = "0.1.0"
+dependencies = [
+ "grounded",
+ "neotracker",
+ "neotron-sdk",
+]
+
+[[package]]
+name = "neotracker"
+version = "0.1.0"
+source = "git+https://github.com/thejpster/neotracker.git?rev=2ee7a85006a9461b876bdf47e45b6105437a38f6#2ee7a85006a9461b876bdf47e45b6105437a38f6"
 
 [[package]]
 name = "neotron-api"
@@ -301,6 +324,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed089a1fbffe3337a1a345501c981f1eb1e47e69de5a40e852433e12953c3174"
 
 [[package]]
+name = "portable-atomic"
+version = "1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "280dc24453071f1b63954171985a0b0d30058d287960968b9b2aca264c8d4ee6"
+dependencies = [
+ "critical-section",
+]
+
+[[package]]
 name = "postcard"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -420,6 +452,13 @@ name = "smallvec"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+
+[[package]]
+name = "snake"
+version = "0.1.0"
+dependencies = [
+ "neotron-sdk",
+]
 
 [[package]]
 name = "spin"
