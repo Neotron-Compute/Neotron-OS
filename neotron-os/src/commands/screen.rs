@@ -65,31 +65,77 @@ fn print_modes() {
     let api = crate::API.get();
     let current_mode = (api.video_get_mode)();
     let mut any_mode = false;
-    for mode_no in 0..255 {
-        // Note (unsafe): we'll test if it's right before we try and use it
-        let Some(m) = Mode::try_from_u8(mode_no) else {
-            continue;
-        };
-        let is_supported = (api.video_is_valid_mode)(m);
-        if is_supported {
-            any_mode = true;
-            let is_current = if current_mode == m { "*" } else { " " };
-            let text_rows = m.text_height();
-            let text_cols = m.text_width();
-            let f = m.format();
-            let width = m.horizontal_pixels();
-            let height = m.vertical_lines();
-            let hz = m.frame_rate_hz();
-            if let (Some(text_rows), Some(text_cols)) = (text_rows, text_cols) {
-                // It's a text mode
-                osprintln!("{mode_no:3}{is_current}: {width} x {height} @ {hz} Hz {f} ({text_cols} x {text_rows})");
-            } else {
-                // It's a framebuffer mode
-                let f = m.format();
-                osprintln!("{mode_no:3}{is_current}: {width} x {height} @ {hz} Hz {f}");
+
+    let formats = [
+        ("T16 ", neotron_common_bios::video::Format::Text8x16),
+        ("T8  ", neotron_common_bios::video::Format::Text8x8),
+        ("C32 ", neotron_common_bios::video::Format::Chunky32),
+        ("C16 ", neotron_common_bios::video::Format::Chunky16),
+        ("C8  ", neotron_common_bios::video::Format::Chunky8),
+        ("C4  ", neotron_common_bios::video::Format::Chunky4),
+        ("C2  ", neotron_common_bios::video::Format::Chunky2),
+        ("C1  ", neotron_common_bios::video::Format::Chunky1),
+    ];
+
+    osprint!("        ");
+    for (name, _) in formats {
+        osprint!("{}", name);
+    }
+    osprintln!();
+
+    for scaling in [
+        neotron_common_bios::video::Scaling::None,
+        neotron_common_bios::video::Scaling::DoubleHeight,
+        neotron_common_bios::video::Scaling::DoubleWidth,
+        neotron_common_bios::video::Scaling::DoubleWidthAndHeight,
+    ] {
+        for timing in [
+            neotron_common_bios::video::Timing::T640x480,
+            neotron_common_bios::video::Timing::T640x400,
+            neotron_common_bios::video::Timing::T800x600,
+        ] {
+            // check if any formats work for this timing mode
+            let mut any_format = false;
+            for (_, format) in formats {
+                let m = neotron_common_bios::video::Mode::new_with_scaling(timing, format, scaling);
+                let is_supported = (api.video_is_valid_mode)(m);
+                if is_supported {
+                    any_format = true;
+                    break;
+                }
+            }
+            // if there's a valid format, print the line (otherwise skip it for brevity)
+            if any_format {
+                let basic_mode = neotron_common_bios::video::Mode::new_with_scaling(
+                    timing,
+                    neotron_common_bios::video::Format::Chunky1,
+                    scaling,
+                );
+                osprint!(
+                    "{:03}x{:03}:",
+                    basic_mode.horizontal_pixels(),
+                    basic_mode.vertical_lines()
+                );
+                for (_, format) in formats {
+                    let m =
+                        neotron_common_bios::video::Mode::new_with_scaling(timing, format, scaling);
+                    let is_supported = (api.video_is_valid_mode)(m);
+                    if is_supported {
+                        osprint!(
+                            "{:03}{}",
+                            m.as_u8(),
+                            if current_mode == m { "<" } else { " " }
+                        );
+                        any_mode = true;
+                    } else {
+                        osprint!("--- ");
+                    }
+                }
+                osprintln!();
             }
         }
     }
+
     if !any_mode {
         osprintln!("No valid modes found");
     }
