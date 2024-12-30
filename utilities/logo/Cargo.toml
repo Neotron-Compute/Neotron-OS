@@ -1,0 +1,12 @@
+[package]
+name = "logo"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Jonathan 'theJPster' Pallant <neotron@thejpster.org.uk>"]
+description = "Shows the Windows 95 boot-up logo"
+
+[dependencies]
+neotron-sdk = { workspace = true }
+
+# See workspace for profile settings

@@ -9,7 +9,7 @@ exclude = [
 ]
 
 [workspace.dependencies]
-neotron-sdk = "0.2.0"
+neotron-sdk = { git = "https://github.com/neotron-compute/neotron-sdk.git", branch = "add-gfx-ioctl-defines" }
 
 [profile.release]
 lto = true

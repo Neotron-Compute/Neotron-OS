@@ -128,17 +128,7 @@ where
 {
     let path = path.as_ref();
     println!("Making binary of: {}", path.display());
-    let output = std::process::Command::new("rustc")
-        .arg("--print")
-        .arg("target-libdir")
-        .output()
-        .expect("Failed to run rustc --print target-libdir");
-    let sysroot = String::from_utf8(output.stdout).expect("sysroot path isn't UTF-8");
-    let sysroot: std::path::PathBuf = sysroot.trim().into();
-    let mut objcopy = sysroot.clone();
-    objcopy.pop();
-    objcopy.push("bin");
-    objcopy.push("llvm-objcopy");
+    let objcopy = tool_path("llvm-objcopy");
     let mut command_line = std::process::Command::new(objcopy);
     command_line.args(["-O", "binary"]);
     command_line.arg(path);
@@ -151,6 +141,49 @@ where
     } else {
         Err(ProcessError::RunError(output.status))
     }
+}
+
+/// Make a binary version of an ELF file
+pub fn strip_elf<P1, P2>(input_path: P1, output_path: P2) -> Result<(), ProcessError>
+where
+    P1: AsRef<std::path::Path>,
+    P2: AsRef<std::path::Path>,
+{
+    let input_path = input_path.as_ref();
+    let output_path = output_path.as_ref();
+
+    println!(
+        "Stripping {} as {}",
+        input_path.display(),
+        output_path.display()
+    );
+    let strip = tool_path("llvm-strip");
+    let mut command_line = std::process::Command::new(strip);
+    command_line.arg(input_path);
+    command_line.arg("-o");
+    command_line.arg(output_path);
+    println!("Running: {:?}", command_line);
+    let output = command_line.output().map_err(ProcessError::SpawnError)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(ProcessError::RunError(output.status))
+    }
+}
+
+/// Get the path where `llvm-objcopy` and friends live.
+pub fn tool_path(tool: &str) -> std::path::PathBuf {
+    let output = std::process::Command::new("rustc")
+        .arg("--print")
+        .arg("target-libdir")
+        .output()
+        .expect("Failed to run rustc --print target-libdir");
+    let sysroot = String::from_utf8(output.stdout).expect("sysroot path isn't UTF-8");
+    let mut result: std::path::PathBuf = sysroot.trim().into();
+    result.pop();
+    result.push("bin");
+    result.push(tool);
+    result
 }
 
 // End of file

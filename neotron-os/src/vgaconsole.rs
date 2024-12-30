@@ -52,12 +52,13 @@ impl VgaConsole {
         false,
     );
 
-    pub fn new(addr: *mut u32, width: isize, height: isize) -> VgaConsole {
+    pub fn new(addr: *mut u32, width_chars: u16, height_chars: u16) -> VgaConsole {
         VgaConsole {
             inner: ConsoleInner {
                 addr,
-                width,
-                height,
+                width_chars,
+                height_chars,
+                mode: FramebufferMode::Text,
                 row: 0,
                 col: 0,
                 attr: Self::DEFAULT_ATTR,
@@ -73,22 +74,77 @@ impl VgaConsole {
 
     /// Change the video mode
     ///
-    /// Non text modes are ignored.
-    pub fn change_mode(&mut self, mode: Mode) {
-        if let (Some(height), Some(width)) = (mode.text_height(), mode.text_width()) {
-            self.inner.height = height as isize;
-            self.inner.width = width as isize;
-            self.clear();
+    /// The `fb_ptr` is given to the BIOS. It can be null, or it must point to a
+    /// region big enough to handle the chosen graphics mode.
+    pub unsafe fn change_mode(
+        &mut self,
+        mode: Mode,
+        fb_ptr: *mut u32,
+    ) -> Result<(), neotron_api::Error> {
+        // TODO: support bitmap text rendering whilst in graphics mode
+
+        // Change mode with the BIOS and return the result
+        let api = crate::API.get();
+        if let neotron_common_bios::FfiResult::Err(_e) = (api.video_set_mode)(mode, fb_ptr) {
+            // BIOS says no
+            return Err(neotron_api::Error::DeviceSpecific);
         }
+        // get whatever buffer the BIOS chose to use
+        self.inner.addr = (api.video_get_framebuffer)();
+        match mode.format() {
+            neotron_common_bios::video::Format::Text8x16
+            | neotron_common_bios::video::Format::Text8x8 => {
+                self.inner.mode = FramebufferMode::Text;
+                // set up the console for this mode
+                self.inner.height_chars = mode.text_height().unwrap();
+                self.inner.width_chars = mode.text_width().unwrap();
+                self.clear();
+            }
+            neotron_common_bios::video::Format::Chunky1 => {
+                self.inner.mode = FramebufferMode::Graphics {
+                    width: mode.horizontal_pixels(),
+                    height: mode.vertical_lines(),
+                    format: FramebufferFormat::Chunky1,
+                    stride: mode.line_size_bytes(),
+                };
+            }
+            neotron_common_bios::video::Format::Chunky2 => {
+                self.inner.mode = FramebufferMode::Graphics {
+                    width: mode.horizontal_pixels(),
+                    height: mode.vertical_lines(),
+                    format: FramebufferFormat::Chunky2,
+                    stride: mode.line_size_bytes(),
+                };
+            }
+            neotron_common_bios::video::Format::Chunky4 => {
+                self.inner.mode = FramebufferMode::Graphics {
+                    width: mode.horizontal_pixels(),
+                    height: mode.vertical_lines(),
+                    format: FramebufferFormat::Chunky4,
+                    stride: mode.line_size_bytes(),
+                };
+            }
+            neotron_common_bios::video::Format::Chunky8 => {
+                self.inner.mode = FramebufferMode::Graphics {
+                    width: mode.horizontal_pixels(),
+                    height: mode.vertical_lines(),
+                    format: FramebufferFormat::Chunky8,
+                    stride: mode.line_size_bytes(),
+                };
+            }
+            _ => {
+                return Err(neotron_api::Error::Unimplemented);
+            }
+        }
+
+        Ok(())
     }
 
     /// Clear the screen.
     ///
-    /// Every character on the screen is replaced with an space (U+0020).
+    /// In text mode, every character on the screen is replaced with an space (U+0020).
     pub fn clear(&mut self) {
-        self.inner.cursor_disable();
         self.inner.clear();
-        self.inner.cursor_enable();
     }
 
     /// Write a UTF-8 byte string to the console.
@@ -102,11 +158,179 @@ impl VgaConsole {
         }
         self.inner.cursor_enable();
     }
+
+    /// Get the current video mode
+    pub fn get_mode(&self) -> Mode {
+        let api = crate::API.get();
+        (api.video_get_mode)()
+    }
+
+    /// Get the framebuffer pointer
+    fn get_fb(&self) -> *mut u32 {
+        let api = crate::API.get();
+        (api.video_get_framebuffer)()
+    }
+
+    /// Clear the bitmap
+    ///
+    /// Returns an error if we're not in bitmap mode
+    pub fn gfx_clear(&mut self, colour: u32) -> Result<(), neotron_api::Error> {
+        let FramebufferMode::Graphics {
+            height,
+            format,
+            stride,
+            ..
+        } = &self.inner.mode
+        else {
+            return Err(neotron_api::Error::InvalidArg);
+        };
+        let fb_ptr = self.get_fb();
+        let pixel_byte = match format {
+            FramebufferFormat::Chunky8 => colour as u8,
+            FramebufferFormat::Chunky4 => {
+                let nibble = (colour as u8) & 0x0F;
+                nibble << 4 | nibble
+            }
+            FramebufferFormat::Chunky2 => {
+                let pair = (colour as u8) & 0x03;
+                pair << 6 | pair << 4 | pair << 2 | pair
+            }
+            FramebufferFormat::Chunky1 => {
+                let bit = (colour as u8) & 0x01;
+                if bit != 0 {
+                    0xFF
+                } else {
+                    0x00
+                }
+            }
+        };
+        for y in 0..*height {
+            let line_start = unsafe { fb_ptr.byte_add(*stride * (y as usize)) } as *mut u8;
+            unsafe {
+                line_start.write_bytes(pixel_byte, *stride);
+            }
+        }
+        Ok(())
+    }
+
+    /// Draw a line
+    ///
+    /// Draw a line between `x0, y0` and `x1, y1` in `colour`
+    ///
+    /// Returns an error if any of the points are off-screen.
+    pub fn gfx_draw_line(
+        &mut self,
+        x0: u16,
+        y0: u16,
+        x1: u16,
+        y1: u16,
+        colour: u32,
+    ) -> Result<(), neotron_api::Error> {
+        let FramebufferMode::Graphics {
+            width,
+            height,
+            format,
+            stride,
+        } = &self.inner.mode
+        else {
+            return Err(neotron_api::Error::InvalidArg);
+        };
+        let fb_ptr = self.get_fb();
+        if x0 >= *width {
+            return Err(neotron_api::Error::InvalidArg);
+        }
+        if y1 >= *height {
+            return Err(neotron_api::Error::InvalidArg);
+        }
+        if x1 >= *width {
+            return Err(neotron_api::Error::InvalidArg);
+        }
+        if y1 >= *height {
+            return Err(neotron_api::Error::InvalidArg);
+        }
+        let plot_line_func = match format {
+            FramebufferFormat::Chunky8 => plot_line::<8>,
+            FramebufferFormat::Chunky4 => plot_line::<4>,
+            FramebufferFormat::Chunky2 => plot_line::<2>,
+            FramebufferFormat::Chunky1 => plot_line::<1>,
+        };
+        unsafe {
+            plot_line_func(
+                fb_ptr as *mut u8,
+                *stride,
+                x0 as i16,
+                y0 as i16,
+                x1 as i16,
+                y1 as i16,
+                colour,
+            )
+        }
+        Ok(())
+    }
+
+    /// Plot a single pixel at `x, y` in `colour`
+    pub fn gfx_plot(&mut self, x: u16, y: u16, colour: u32) -> Result<(), neotron_api::Error> {
+        let FramebufferMode::Graphics {
+            width,
+            height,
+            format,
+            stride,
+        } = &self.inner.mode
+        else {
+            return Err(neotron_api::Error::InvalidArg);
+        };
+        let fb_ptr = self.get_fb();
+        if x >= *width {
+            return Err(neotron_api::Error::InvalidArg);
+        }
+        if y >= *height {
+            return Err(neotron_api::Error::InvalidArg);
+        }
+        if fb_ptr.is_null() {
+            return Err(neotron_api::Error::NotFound);
+        }
+        // our video line starts here
+        let line_start = unsafe { fb_ptr.byte_add(*stride * (y as usize)) } as *mut u8;
+        let chunky_plot_func = match format {
+            FramebufferFormat::Chunky8 => chunky_plot::<8>,
+            FramebufferFormat::Chunky4 => chunky_plot::<4>,
+            FramebufferFormat::Chunky2 => chunky_plot::<2>,
+            FramebufferFormat::Chunky1 => chunky_plot::<1>,
+        };
+        unsafe {
+            chunky_plot_func(line_start, x, colour);
+        }
+
+        Ok(())
+    }
 }
 
 // ===========================================================================
 // Private types
 // ===========================================================================
+
+#[derive(Debug, PartialEq, Eq)]
+enum FramebufferMode {
+    Graphics {
+        /// width in pixels
+        width: u16,
+        /// height in pixels
+        height: u16,
+        /// pixel format
+        format: FramebufferFormat,
+        /// How many bytes per line?
+        stride: usize,
+    },
+    Text,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum FramebufferFormat {
+    Chunky1,
+    Chunky2,
+    Chunky4,
+    Chunky8,
+}
 
 /// Handles the inner details of where we are on screen.
 ///
@@ -116,14 +340,16 @@ struct ConsoleInner {
     ///
     /// Always 32-bit aligned.
     addr: *mut u32,
+    /// our current screen format
+    mode: FramebufferMode,
     /// The width of the screen in characters
-    width: isize,
+    width_chars: u16,
     /// The height of the screen in characters
-    height: isize,
+    height_chars: u16,
     /// The current row position in characters
-    row: isize,
+    row: u16,
     /// The current column position in characters
-    col: isize,
+    col: u16,
     /// The attribute to apply to the next character we draw
     attr: Attr,
     /// Have we seen the ANSI 'bold' command?
@@ -149,10 +375,14 @@ impl ConsoleInner {
 
     /// Replace the glyph at the current location with a cursor.
     fn cursor_enable(&mut self) {
-        self.cursor_depth -= 1;
-        if self.cursor_depth == 0 && self.cursor_wanted && self.cursor_holder.is_none() {
+        self.cursor_depth = self.cursor_depth.saturating_sub(1);
+        if self.cursor_depth == 0
+            && self.cursor_wanted
+            && self.cursor_holder.is_none()
+            && self.mode == FramebufferMode::Text
+        {
             // Remember what was where our cursor is (unless the cursor is off-screen, when we make something up)
-            if self.row >= 0 && self.row < self.height && self.col >= 0 && self.col < self.width {
+            if self.row < self.height_chars && self.col < self.width_chars {
                 let value = self.read();
                 self.write_at(self.row, self.col, b'_', true);
                 self.cursor_holder = Some(value);
@@ -165,7 +395,7 @@ impl ConsoleInner {
     /// Replace the cursor at the current location with its previous contents.
     fn cursor_disable(&mut self) {
         if let Some(glyph) = self.cursor_holder.take() {
-            if self.row >= 0 && self.row < self.height && self.col >= 0 && self.col < self.width {
+            if self.row < self.height_chars && self.col < self.width_chars {
                 // cursor was on-screen, so restore it
                 self.write(glyph);
             }
@@ -176,27 +406,29 @@ impl ConsoleInner {
     /// Move the cursor relative to the current location.
     ///
     /// Clamps to the visible screen.
-    fn move_cursor_relative(&mut self, rows: isize, cols: isize) {
-        self.row += rows;
-        self.col += cols;
-        if self.row < 0 {
+    fn move_cursor_relative(&mut self, rows: i16, cols: i16) {
+        let new_row = self.row as i16 + rows;
+        if new_row < 0 {
             self.row = 0;
+        } else if new_row >= self.height_chars as i16 {
+            self.row = self.height_chars - 1;
+        } else {
+            self.row = new_row as u16;
         }
-        if self.col < 0 {
+        let new_col = self.col as i16 + cols;
+        if new_col < 0 {
             self.col = 0;
-        }
-        if self.row >= self.height {
-            self.row = self.height - 1;
-        }
-        if self.col >= self.width {
-            self.col = self.width - 1;
+        } else if new_col >= self.width_chars as i16 {
+            self.col = self.width_chars - 1;
+        } else {
+            self.col = new_col as u16;
         }
     }
 
     /// Move the cursor to the given location.
     ///
     /// Clamps to the visible screen.
-    fn move_cursor_absolute(&mut self, rows: isize, cols: isize) {
+    fn move_cursor_absolute(&mut self, rows: u16, cols: u16) {
         // move it
         self.row = rows;
         self.col = cols;
@@ -214,11 +446,11 @@ impl ConsoleInner {
     /// We defer this so you can write the last char on the last line without
     /// causing it to scroll pre-emptively.
     fn scroll_as_required(&mut self) {
-        while self.col >= self.width {
-            self.col -= self.width;
+        while self.col >= self.width_chars {
+            self.col -= self.width_chars;
             self.row += 1;
         }
-        while self.row >= self.height {
+        while self.row >= self.height_chars {
             self.row -= 1;
             self.scroll_page();
         }
@@ -226,12 +458,14 @@ impl ConsoleInner {
 
     /// Blank the screen
     fn clear(&mut self) {
-        for row in 0..self.height {
-            for col in 0..self.width {
+        self.cursor_disable();
+        for row in 0..self.height_chars {
+            for col in 0..self.width_chars {
                 self.write_at(row, col, b' ', false);
             }
         }
         self.home();
+        self.cursor_enable();
     }
 
     /// Put a glyph at the current position on the screen.
@@ -244,16 +478,21 @@ impl ConsoleInner {
     /// Put a glyph at a given position on the screen.
     ///
     /// Don't do this if the cursor is enabled.
-    fn write_at(&mut self, row: isize, col: isize, glyph: u8, is_cursor: bool) {
-        assert!(row < self.height, "{} >= {}?", row, self.height);
-        assert!(col < self.width, "{} => {}?", col, self.width);
+    fn write_at(&mut self, row: u16, col: u16, glyph: u8, is_cursor: bool) {
+        if self.mode != FramebufferMode::Text {
+            // console disabled.
+            // TODO: support bitmap font rendering onto a graphical framebuffer
+            return;
+        }
+        assert!(row < self.height_chars, "{} >= {}?", row, self.height_chars);
+        assert!(col < self.width_chars, "{} => {}?", col, self.width_chars);
         if !crate::IS_PANIC.load(core::sync::atomic::Ordering::Relaxed) && !is_cursor {
             assert!(self.cursor_holder.is_none());
         }
 
-        let offset = ((row * self.width) + col) * 2;
+        let offset = ((row * self.width_chars) + col) * 2;
         let byte_addr = self.addr as *mut u8;
-        unsafe { core::ptr::write_volatile(byte_addr.offset(offset), glyph) };
+        unsafe { core::ptr::write_volatile(byte_addr.add(offset as usize), glyph) };
         let attr = if self.reverse {
             let new_fg = self.attr.bg().make_foreground();
             let new_bg = self.attr.fg().make_background();
@@ -262,7 +501,7 @@ impl ConsoleInner {
             self.attr
         };
 
-        unsafe { core::ptr::write_volatile(byte_addr.offset(offset + 1), attr.as_u8()) };
+        unsafe { core::ptr::write_volatile(byte_addr.add(offset as usize + 1), attr.as_u8()) };
     }
 
     /// Read a glyph at the current position
@@ -275,33 +514,43 @@ impl ConsoleInner {
     /// Read a glyph at the given position
     ///
     /// Don't do this if the cursor is enabled.
-    fn read_at(&mut self, row: isize, col: isize) -> u8 {
-        assert!(row < self.height, "{} >= {}?", row, self.height);
-        assert!(col < self.width, "{} => {}?", col, self.width);
+    fn read_at(&mut self, row: u16, col: u16) -> u8 {
+        if self.mode != FramebufferMode::Text {
+            // console disabled
+            // TODO: support bitmap font parsing off of a graphical framebuffer
+            return 0;
+        }
+        assert!(row < self.height_chars, "{} >= {}?", row, self.height_chars);
+        assert!(col < self.width_chars, "{} => {}?", col, self.width_chars);
         if !crate::IS_PANIC.load(core::sync::atomic::Ordering::Relaxed) {
             assert!(self.cursor_holder.is_none());
         }
-        let offset = ((row * self.width) + col) * 2;
+        let offset = ((row * self.width_chars) + col) * 2;
         let byte_addr = self.addr as *const u8;
-        unsafe { core::ptr::read_volatile(byte_addr.offset(offset)) }
+        unsafe { core::ptr::read_volatile(byte_addr.add(offset as usize)) }
     }
 
     /// Move everyone on screen up one line, losing the top line.
     ///
     /// The bottom line will be all space characters.
     fn scroll_page(&mut self) {
-        let row_len_words = self.width / 2;
+        if self.mode != FramebufferMode::Text {
+            // console disabled
+            // TODO: support bitmap font rendering onto a graphical framebuffer
+            return;
+        }
+        let row_len_words = self.width_chars / 2;
         unsafe {
             // Scroll rows[1..=height-1] to become rows[0..=height-2].
             core::ptr::copy(
-                self.addr.offset(row_len_words),
+                self.addr.add(row_len_words as usize),
                 self.addr,
-                (row_len_words * (self.height - 1)) as usize,
+                (row_len_words * (self.height_chars - 1)) as usize,
             );
         }
         // Blank the bottom line of the screen (rows[height-1]).
-        for col in 0..self.width {
-            self.write_at(self.height - 1, col, b' ', false);
+        for col in 0..self.width_chars {
+            self.write_at(self.height_chars - 1, col, b' ', false);
         }
     }
 
@@ -547,8 +796,8 @@ impl vte::Perform for ConsoleInner {
         action: char,
     ) {
         // Just in case you want a single parameter, here it is
-        let mut first = *params.iter().next().and_then(|s| s.first()).unwrap_or(&1) as isize;
-        let mut second = *params.iter().nth(1).and_then(|s| s.first()).unwrap_or(&1) as isize;
+        let mut first = *params.iter().next().and_then(|s| s.first()).unwrap_or(&1) as i32;
+        let mut second = *params.iter().nth(1).and_then(|s| s.first()).unwrap_or(&1) as i32;
 
         match action {
             'm' => {
@@ -644,42 +893,44 @@ impl vte::Perform for ConsoleInner {
                 if first == 0 {
                     first = 1;
                 }
-                self.move_cursor_relative(-first, 0);
+                self.move_cursor_relative(-first as i16, 0);
             }
             'B' => {
                 // Cursor Down
                 if first == 0 {
                     first = 1;
                 }
-                self.move_cursor_relative(first, 0);
+                self.move_cursor_relative(first as i16, 0);
             }
             'C' => {
                 // Cursor Forward
                 if first == 0 {
                     first = 1;
                 }
-                self.move_cursor_relative(0, first);
+                self.move_cursor_relative(0, first as i16);
             }
             'D' => {
                 // Cursor Back
                 if first == 0 {
                     first = 1;
                 }
-                self.move_cursor_relative(0, -first);
+                self.move_cursor_relative(0, -first as i16);
             }
             'E' => {
                 // Cursor next line
                 if first == 0 {
                     first = 1;
                 }
-                self.move_cursor_absolute(self.row + first, 0);
+                self.move_cursor_relative(first as i16, 0);
+                self.move_cursor_absolute(self.row, 0);
             }
             'F' => {
                 // Cursor previous line
                 if first == 0 {
                     first = 1;
                 }
-                self.move_cursor_absolute(self.row - first, 0);
+                self.move_cursor_relative(-first as i16, 0);
+                self.move_cursor_absolute(self.row, 0);
             }
             'G' => {
                 // Cursor horizontal absolute
@@ -687,7 +938,7 @@ impl vte::Perform for ConsoleInner {
                     first = 1;
                 }
                 // We are zero-indexed, ANSI is 1-indexed
-                self.move_cursor_absolute(self.row, first - 1);
+                self.move_cursor_absolute(self.row, (first - 1) as u16);
             }
             'H' | 'f' => {
                 // Cursor Position (or Horizontal Vertical Position)
@@ -698,15 +949,15 @@ impl vte::Perform for ConsoleInner {
                     second = 1;
                 }
                 // We are zero-indexed, ANSI is 1-indexed
-                self.move_cursor_absolute(first - 1, second - 1);
+                self.move_cursor_absolute((first - 1) as u16, (second - 1) as u16);
             }
             'J' => {
                 // Erase in Display
                 match first {
                     0 => {
                         // Erase the cursor through the end of the display
-                        for row in 0..self.height {
-                            for col in 0..self.width {
+                        for row in 0..self.height_chars {
+                            for col in 0..self.width_chars {
                                 if row > self.row || (row == self.row && col >= self.col) {
                                     self.write_at(row, col, b' ', false);
                                 }
@@ -715,8 +966,8 @@ impl vte::Perform for ConsoleInner {
                     }
                     1 => {
                         // Erase from the beginning of the display through the cursor
-                        for row in 0..self.height {
-                            for col in 0..self.width {
+                        for row in 0..self.height_chars {
+                            for col in 0..self.width_chars {
                                 if row < self.row || (row == self.row && col <= self.col) {
                                     self.write_at(row, col, b' ', false);
                                 }
@@ -725,8 +976,8 @@ impl vte::Perform for ConsoleInner {
                     }
                     2 => {
                         // Erase the complete display
-                        for row in 0..self.height {
-                            for col in 0..self.width {
+                        for row in 0..self.height_chars {
+                            for col in 0..self.width_chars {
                                 self.write_at(row, col, b' ', false);
                             }
                         }
@@ -741,7 +992,7 @@ impl vte::Perform for ConsoleInner {
                 match first {
                     0 => {
                         // Erase the cursor through the end of the line
-                        for col in self.col..self.width {
+                        for col in self.col..self.width_chars {
                             self.write_at(self.row, col, b' ', false);
                         }
                     }
@@ -753,7 +1004,7 @@ impl vte::Perform for ConsoleInner {
                     }
                     2 => {
                         // Erase the complete line
-                        for col in 0..self.width {
+                        for col in 0..self.width_chars {
                             self.write_at(self.row, col, b' ', false);
                         }
                     }
@@ -789,7 +1040,83 @@ impl vte::Perform for ConsoleInner {
 // Private functions
 // ===========================================================================
 
-// None
+/// Plot a line
+///
+/// Adapted from https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm#All_cases
+///
+/// # Safety
+///
+/// Ensure `fb_ptr` points to a buffer that is at least `stride * (y_max + 1)`
+/// bytes long, where `y_max` is the larger of `y0` and `y1`.
+unsafe fn plot_line<const BPP: u8>(
+    fb_ptr: *mut u8,
+    stride: usize,
+    mut x0: i16,
+    mut y0: i16,
+    x1: i16,
+    y1: i16,
+    colour: u32,
+) {
+    let dx = x1.abs_diff(x0) as i16;
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1.abs_diff(y0) as i16);
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let line_offset = if y0 < y1 {
+        stride as isize
+    } else {
+        -(stride as isize)
+    };
+    let mut error = dx + dy;
+    let mut line_start = unsafe { fb_ptr.add(stride * y0 as usize) };
+    loop {
+        chunky_plot::<BPP>(line_start, x0 as u16, colour);
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let e2 = error * 2;
+        if e2 >= dy {
+            error += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            error += dx;
+            y0 += sy;
+            line_start = line_start.offset(line_offset);
+        }
+    }
+}
+
+/// Plot a single pixel into one line of video.
+///
+/// # Safety
+///
+/// Ensure `line_start` points to a buffer that is at least `x * BPP / 8` bytes long.
+unsafe fn chunky_plot<const BPP: u8>(line_start: *mut u8, x: u16, colour: u32) {
+    // this is 8, 4, 2 or 1
+    let pixels_per_byte = 8 / BPP;
+    // pick a byte in the line
+    let byte_ptr = unsafe { line_start.add(x as usize / pixels_per_byte as usize) };
+    // load the byte
+    let mut byte = unsafe { byte_ptr.read() };
+    // this is pixels_per_byte-1 to 0, because the left hand pixel has the upper-most bits
+    let pixel_in_byte = (pixels_per_byte - 1) - (x % pixels_per_byte as u16) as u8;
+    // This is 2, 4, 16 or 256
+    let num_colours = (1 << BPP) as u32;
+    // this is 0b1, 0b11, 0xF or 0xFF
+    let pixel_mask = num_colours - 1;
+    // this marks the pixels of interest
+    let shifted_pixel_mask = (pixel_mask << (pixel_in_byte * BPP)) as u8;
+    // cap the colour
+    let shifted_new_colour = ((colour & pixel_mask) << (pixel_in_byte * BPP)) as u8;
+    // zero out the old colour
+    byte &= !shifted_pixel_mask;
+    // set the new colour
+    byte |= shifted_new_colour;
+    // write it back
+    unsafe {
+        byte_ptr.write(byte);
+    }
+}
 
 // ===========================================================================
 // Public functions
@@ -803,7 +1130,7 @@ impl vte::Perform for ConsoleInner {
 
 #[cfg(test)]
 mod tests {
-    use super::VgaConsole;
+    use super::{chunky_plot, VgaConsole};
     const WIDTH: usize = 12;
     const HEIGHT: usize = 7;
 
@@ -835,7 +1162,7 @@ mod tests {
     #[test]
     fn basic_print() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"Hello\n");
         assert_eq!(
             print_buffer(&buffer),
@@ -855,7 +1182,7 @@ mod tests {
     #[test]
     fn cr_overprint() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"0\r1\n");
         // Second row
         assert_eq!(console.inner.row, 1);
@@ -880,14 +1207,14 @@ mod tests {
     #[test]
     fn scroll() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"0\n");
         console.write_bstr(b"1\n");
         for _ in 0..HEIGHT - 1 {
             console.write_bstr(b"\n");
         }
         // We are now off the bottom of the screen
-        assert_eq!(console.inner.row, HEIGHT as isize);
+        assert_eq!(console.inner.row, HEIGHT as u16);
         assert_eq!(console.inner.col, 0);
         // And the '1' is on the top row
         assert_eq!(
@@ -906,7 +1233,7 @@ mod tests {
     #[test]
     fn home1() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[0;0H1\n");
         // We are on the second row
@@ -929,7 +1256,7 @@ mod tests {
     #[test]
     fn home2() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[1;1H1\n");
         // And the '1' has replaced the '0'
@@ -949,7 +1276,7 @@ mod tests {
     #[test]
     fn home3() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print 0 and replace it with a 1
         console.write_bstr(b"0\n\x1b[H1\n");
         // The '1' has replaced the '0'
@@ -972,7 +1299,7 @@ mod tests {
     #[test]
     fn movecursor() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print 0 and replace it with a 1
         console.write_bstr(b"\x1b[2;2H1");
         assert_eq!(
@@ -994,7 +1321,7 @@ mod tests {
     #[test]
     fn sgr_reset() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"\x1b[0m1");
         assert_eq!(
             print_buffer(&buffer),
@@ -1014,7 +1341,7 @@ mod tests {
     #[test]
     fn sgr_backgrounds() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
         // +-------+-----+-----+-----+-----+-----+-----+-----+
@@ -1051,7 +1378,7 @@ mod tests {
     #[test]
     fn sgr_foregrounds() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
         // +-------+-----+-----+-----+-----+-----+-----+-----+
@@ -1088,7 +1415,7 @@ mod tests {
     #[test]
     fn sgr_bold() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
         // +-------+-----+-----+-----+-----+-----+-----+-----+
@@ -1127,7 +1454,7 @@ mod tests {
     #[test]
     fn sgr_all_three() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // +-------+-----+-----+-----+-----+-----+-----+-----+
         // + BLINK | BG2 | BG1 | BG0 | FG3 | FG2 | FG1 | FG0 |
         // +-------+-----+-----+-----+-----+-----+-----+-----+
@@ -1159,7 +1486,7 @@ mod tests {
     #[test]
     fn cursor_up() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Go home, print 0\n then go up a line and replace the 0 with a 1
         console.write_bstr(b"\x1b[H0\n\x1b[A1");
         assert_eq!(
@@ -1225,7 +1552,7 @@ mod tests {
     #[test]
     fn cursor_down() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Go home, go down 1 line, and print 0
         console.write_bstr(b"\x1b[H\x1b[B0");
         assert_eq!(
@@ -1291,7 +1618,7 @@ mod tests {
     #[test]
     fn cursor_forward() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print .0.1.2..3
         console.write_bstr(b"\x1b[C0");
         console.write_bstr(b"\x1b[0C1");
@@ -1313,7 +1640,7 @@ mod tests {
     #[test]
     fn cursor_backwards() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print 123 then replace the 3 with a 4
         console.write_bstr(b"123\x1b[D4");
         assert_eq!(
@@ -1371,7 +1698,7 @@ mod tests {
     #[test]
     fn cursor_next_line() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Go home, print xxx, go down 1 line, and print 0
         console.write_bstr(b"\x1b[Hxxx\x1b[E0");
         // We should have returned to col 0 for the '0' so are in col 1
@@ -1438,7 +1765,7 @@ mod tests {
     #[test]
     fn cursor_previous_line() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print xx, xx, 11, 22, 33, 456 on the first five lines
         // Then go back and replace 4 with 7, 3 with 8, 2 with 9 and the first x with 0
         console.write_bstr(b"xx\nxx\n11\n22\n33\n456\x1b[F7\x1b[0F8\x1b[1F9\x1b[2F0");
@@ -1461,7 +1788,7 @@ mod tests {
     #[test]
     fn cursor_horizontal_absolute() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // Print 12345 the replace the 3 with a 9
         console.write_bstr(b"12345\x1b[3G9");
         assert_eq!(
@@ -1482,7 +1809,7 @@ mod tests {
     #[test]
     fn cursor_position() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         // In row;col form.
         console.write_bstr(b"xxx\x1b[H0\x1b[;3H1\x1b[2;H2\x1b[3;4H3");
         // the 4 should be in the right-hand column, and the 5 should wrap
@@ -1506,7 +1833,7 @@ mod tests {
     #[test]
     fn erase_in_display_cursor_to_end() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 1);
@@ -1529,7 +1856,7 @@ mod tests {
     #[test]
     fn erase_in_display_start_to_cursor() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 1);
@@ -1552,7 +1879,7 @@ mod tests {
     #[test]
     fn erase_in_display_entire_screen() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 1);
@@ -1575,7 +1902,7 @@ mod tests {
     #[test]
     fn erase_in_line_cursor_to_end() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 1);
@@ -1598,7 +1925,7 @@ mod tests {
     #[test]
     fn erase_in_line_start_to_cursor() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 1);
@@ -1621,7 +1948,7 @@ mod tests {
     #[test]
     fn erase_in_line_entire_line() {
         let mut buffer = [0u32; WIDTH * HEIGHT / 2];
-        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as isize, HEIGHT as isize);
+        let mut console = VgaConsole::new(buffer.as_mut_ptr(), WIDTH as u16, HEIGHT as u16);
         console.write_bstr(b"xxx\nxxx\n\x1b[2;2H");
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 1);
@@ -1639,6 +1966,161 @@ mod tests {
         );
         assert_eq!(console.inner.row, 1);
         assert_eq!(console.inner.col, 1);
+    }
+
+    #[test]
+    fn chunky1_test() {
+        let mut buffer = vec![0x00u8; (640 / 8) + 1];
+
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 0, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b1000_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 1, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 8, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 15, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b1000_0001, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 15, 0) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+    }
+
+    #[test]
+    fn chunky2_test() {
+        let mut buffer = vec![0x00u8; (640 / 4) + 1];
+
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 0, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 1, 2) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0110_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 1, 3) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0111_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 4, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0111_0000, 0b0100_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 7, 3) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0111_0000, 0b0100_0011, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+    }
+
+    #[test]
+    fn chunky4_test() {
+        let mut buffer = vec![0x00u8; (640 / 2) + 1];
+
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 0, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 1, 2) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0010, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 1, 3) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0011, 0b0000_0000, 0b0000_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 4, 1) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_0000],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+
+        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 7, 15) };
+        assert_eq!(
+            &buffer[0..4],
+            [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_1111],
+            "Got {:02x?}",
+            &buffer[0..4]
+        );
+    }
+
+    #[test]
+    fn chunky8_test() {
+        let mut buffer = vec![0x00u8; 641];
+
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 0, 1) };
+        assert_eq!(&buffer[0..4], [1, 0, 0, 0]);
+
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 1, 2) };
+        assert_eq!(&buffer[0..4], [1, 2, 0, 0]);
+
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 1, 255) };
+        assert_eq!(&buffer[0..4], [1, 255, 0, 0]);
+
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 3, 127) };
+        assert_eq!(&buffer[0..4], [1, 255, 0, 127],);
+
+        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 3, 255) };
+        assert_eq!(&buffer[0..4], [1, 255, 0, 255],);
     }
 }
 

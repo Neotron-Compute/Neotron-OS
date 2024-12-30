@@ -414,11 +414,7 @@ pub extern "C" fn os_main(api: &bios::Api) -> ! {
         let (width, height) = (mode.text_width(), mode.text_height());
 
         if let (Some(width), Some(height)) = (width, height) {
-            let mut vga = vgaconsole::VgaConsole::new(
-                (api.video_get_framebuffer)(),
-                width as isize,
-                height as isize,
-            );
+            let mut vga = vgaconsole::VgaConsole::new((api.video_get_framebuffer)(), width, height);
             vga.clear();
             let mut guard = VGA_CONSOLE.lock();
             *guard = Some(vga);

@@ -5,7 +5,7 @@ use neotron_api::FfiByteSlice;
 use crate::{fs, osprintln, refcell::CsRefCell, API, FILESYSTEM};
 
 #[allow(unused)]
-static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
+pub static CALLBACK_TABLE: neotron_api::Api = neotron_api::Api {
     open: api_open,
     close: api_close,
     write: api_write,
@@ -45,6 +45,23 @@ pub enum OpenHandle {
     Closed,
     /// Represents the audio device,
     Audio,
+    /// Represents the framebuffer device
+    Gfx(GfxState),
+}
+
+/// State for when writing to a graphics device
+pub struct GfxState {
+    cursor_x: u16,
+    cursor_y: u16,
+}
+
+impl GfxState {
+    fn new() -> GfxState {
+        GfxState {
+            cursor_x: 0,
+            cursor_y: 0,
+        }
+    }
 }
 
 /// The open handle table
@@ -300,6 +317,12 @@ impl TransientProgramArea {
             return Err(Error::NothingLoaded);
         }
 
+        // Record the current video mode
+        let api = API.get();
+        // TODO: Use VgaConsole to do this?
+        let old_mode = (api.video_get_mode)();
+        let old_ptr = (api.video_get_framebuffer)();
+
         // Setup the default file handles
         let mut open_handles = OPEN_HANDLES.lock();
         open_handles[0] = OpenHandle::StdIn;
@@ -329,6 +352,12 @@ impl TransientProgramArea {
             *h = OpenHandle::Closed;
         }
         drop(open_handles);
+
+        let mut lock = crate::VGA_CONSOLE.lock();
+        if let Some(console) = lock.as_mut() {
+            // put the video mode back as it was
+            let _ = unsafe { console.change_mode(old_mode, old_ptr) };
+        }
 
         self.last_entry = 0;
         Ok(result)
@@ -391,6 +420,17 @@ extern "C" fn api_open(
     // Check for special devices
     if path.as_str().eq_ignore_ascii_case("AUDIO:") {
         match allocate_handle(OpenHandle::Audio) {
+            Ok(n) => {
+                return neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8));
+            }
+            Err(_f) => {
+                return neotron_api::Result::Err(neotron_api::Error::OutOfMemory);
+            }
+        }
+    }
+    if path.as_str().eq_ignore_ascii_case("GFX:") {
+        let initial_state = GfxState::new();
+        match allocate_handle(OpenHandle::Gfx(initial_state)) {
             Ok(n) => {
                 return neotron_api::Result::Ok(neotron_api::file::Handle::new(n as u8));
             }
@@ -478,6 +518,10 @@ extern "C" fn api_write(
         OpenHandle::StdIn | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
         }
+        OpenHandle::Gfx(_state) => {
+            // TODO: Allow users to write to the screen
+            neotron_api::Result::Err(neotron_api::Error::Unimplemented)
+        }
     }
 }
 
@@ -522,6 +566,10 @@ extern "C" fn api_read(
         }
         OpenHandle::Stdout | OpenHandle::StdErr | OpenHandle::Closed => {
             neotron_api::Result::Err(neotron_api::Error::BadHandle)
+        }
+        OpenHandle::Gfx(_state) => {
+            // TODO: allow users to read the contents of the screen
+            neotron_api::Result::Err(neotron_api::Error::Unimplemented)
         }
     }
 }
@@ -583,61 +631,9 @@ extern "C" fn api_ioctl(
     let Some(h) = open_handles.get_mut(fd.value() as usize) else {
         return neotron_api::Result::Err(neotron_api::Error::BadHandle);
     };
-    let api = API.get();
-    match (h, command) {
-        (OpenHandle::Audio, 0) => {
-            // Getting sample rate
-            let neotron_common_bios::FfiResult::Ok(config) = (api.audio_output_get_config)() else {
-                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
-            };
-            let mut result: u64 = config.sample_rate_hz as u64;
-            let nibble = match config.sample_format.make_safe() {
-                Ok(neotron_common_bios::audio::SampleFormat::EightBitMono) => 0,
-                Ok(neotron_common_bios::audio::SampleFormat::EightBitStereo) => 1,
-                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitMono) => 2,
-                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitStereo) => 3,
-                _ => {
-                    return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
-                }
-            };
-            result |= nibble << 60;
-            neotron_api::Result::Ok(result)
-        }
-        (OpenHandle::Audio, 1) => {
-            // Setting sample rate
-            let sample_rate = value as u32;
-            let format = match value >> 60 {
-                0 => neotron_common_bios::audio::SampleFormat::EightBitMono,
-                1 => neotron_common_bios::audio::SampleFormat::EightBitStereo,
-                2 => neotron_common_bios::audio::SampleFormat::SixteenBitMono,
-                3 => neotron_common_bios::audio::SampleFormat::SixteenBitStereo,
-                _ => {
-                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
-                }
-            };
-            let config = neotron_common_bios::audio::Config {
-                sample_format: format.make_ffi_safe(),
-                sample_rate_hz: sample_rate,
-            };
-            match (api.audio_output_set_config)(config) {
-                neotron_common_bios::FfiResult::Ok(_) => {
-                    osprintln!("audio {}, {:?}", sample_rate, format);
-                    neotron_api::Result::Ok(0)
-                }
-                neotron_common_bios::FfiResult::Err(_) => {
-                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
-                }
-            }
-        }
-        (OpenHandle::Audio, 2) => {
-            // Setting sample space
-            match (api.audio_output_get_space)() {
-                neotron_common_bios::FfiResult::Ok(n) => neotron_api::Result::Ok(n as u64),
-                neotron_common_bios::FfiResult::Err(_) => {
-                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
-                }
-            }
-        }
+    match h {
+        OpenHandle::Audio => ioctl_audio(h, command, value),
+        OpenHandle::Gfx(state) => ioctl_gfx(state, command, value),
         _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
     }
 }
@@ -750,6 +746,207 @@ extern "C" fn api_malloc(
 
 /// Free some previously allocated memory
 extern "C" fn api_free(_ptr: *mut core::ffi::c_void, _size: usize, _alignment: usize) {}
+
+/// Handle audio-specific ioctls
+fn ioctl_audio(_h: &mut OpenHandle, command: u64, value: u64) -> neotron_api::Result<u64> {
+    let api = API.get();
+    match command {
+        0 => {
+            // Getting sample rate
+            let neotron_common_bios::FfiResult::Ok(config) = (api.audio_output_get_config)() else {
+                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+            };
+            let mut result: u64 = config.sample_rate_hz as u64;
+            let nibble = match config.sample_format.make_safe() {
+                Ok(neotron_common_bios::audio::SampleFormat::EightBitMono) => 0,
+                Ok(neotron_common_bios::audio::SampleFormat::EightBitStereo) => 1,
+                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitMono) => 2,
+                Ok(neotron_common_bios::audio::SampleFormat::SixteenBitStereo) => 3,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+                }
+            };
+            result |= nibble << 60;
+            neotron_api::Result::Ok(result)
+        }
+        1 => {
+            // Setting sample rate
+            let sample_rate = value as u32;
+            let format = match value >> 60 {
+                0 => neotron_common_bios::audio::SampleFormat::EightBitMono,
+                1 => neotron_common_bios::audio::SampleFormat::EightBitStereo,
+                2 => neotron_common_bios::audio::SampleFormat::SixteenBitMono,
+                3 => neotron_common_bios::audio::SampleFormat::SixteenBitStereo,
+                _ => {
+                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+                }
+            };
+            let config = neotron_common_bios::audio::Config {
+                sample_format: format.make_ffi_safe(),
+                sample_rate_hz: sample_rate,
+            };
+            match (api.audio_output_set_config)(config) {
+                neotron_common_bios::FfiResult::Ok(_) => {
+                    osprintln!("audio {}, {:?}", sample_rate, format);
+                    neotron_api::Result::Ok(0)
+                }
+                neotron_common_bios::FfiResult::Err(_) => {
+                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+                }
+            }
+        }
+        2 => {
+            // Setting sample space
+            match (api.audio_output_get_space)() {
+                neotron_common_bios::FfiResult::Ok(n) => neotron_api::Result::Ok(n as u64),
+                neotron_common_bios::FfiResult::Err(_) => {
+                    neotron_api::Result::Err(neotron_api::Error::DeviceSpecific)
+                }
+            }
+        }
+        _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
+    }
+}
+
+/// Clear the screen
+///
+/// The command the colour, which is taken modulo the number of on-screen colours.
+pub const GFX_COMMAND_CLEAR_SCREEN: u64 = 0;
+
+/// Plot a chunky pixel
+///
+/// The command contains [ x | y | mode | colour ].
+///
+/// * `x` is 16 bits and marks the horizontal position (0 is left)
+/// * `y` is 16 bits and marks the vertical position (0 is top)
+/// * `mode` is 8 bits and is currently ignored
+/// * `colour` is 24 bits, and is taken modulo the number of on-screen colours
+pub const GFX_COMMAND_CHUNKY_PLOT: u64 = 1;
+
+/// Change graphics mode
+///
+/// The command contains the video mode in the upper 32 bits and a pointer to a
+/// framebuffer in the lower 32 bits.
+///
+/// The framebuffer pointer must point to a 32-bit aligned region of memory
+/// that is large enough for the selected mode. If you pass `null`, then the OS
+/// will attempt to allocate a framebuffer for you.
+pub const GFX_COMMAND_CHANGE_MODE: u64 = 2;
+
+/// Move the cursor
+///
+/// The command contains [ x | y | <padding> ].
+pub const GFX_COMMAND_MOVE_CURSOR: u64 = 3;
+
+/// Draw a line
+///
+/// The command contains [ x | y | mode | colour ].
+///
+/// * `x` is 16 bits and marks the final horizontal position (0 is left)
+/// * `y` is 16 bits and marks the final vertical position (0 is top)
+/// * `mode` is 8 bits and is currently ignored
+/// * `colour` is 24 bits, and is taken modulo the number of on-screen colours
+///
+/// The start position is the cursor position. The cursor is updated to the final position.
+pub const GFX_COMMAND_DRAW_LINE: u64 = 4;
+
+/// Set a palette entry
+///
+/// The command contains [ <padding> | II | RR | GG | BB ]
+///
+/// II, RR, GG and BB are 8-bit values where II is the index into the 256 long
+/// palette, and RR, GG and BB are the 24-bit RGB colour for that index.
+///
+/// Use [`set_palette_value`] to construct a value.
+pub const GFX_COMMAND_SET_PALETTE: u64 = 5;
+
+/// Handle framebuffer-specific ioctls
+fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Result<u64> {
+    let mut lock = crate::VGA_CONSOLE.lock();
+    let Some(console) = lock.as_mut() else {
+        // there is no graphics console
+        return neotron_api::Result::Err(neotron_api::Error::NotFound);
+    };
+    match command {
+        GFX_COMMAND_CLEAR_SCREEN => {
+            let colour = (value & 0xFFFFFF) as u32;
+            if let Err(e) = console.gfx_clear(colour) {
+                Err(e).into()
+            } else {
+                Ok(0).into()
+            }
+        }
+        GFX_COMMAND_CHUNKY_PLOT => {
+            // the position on screen
+            let x = (value >> 48) as u16;
+            let y = (value >> 32) as u16;
+            // whether to "set", "xor", "or", or "and" the pixel.
+            // currently only "set" is supported (0)
+            let _mode = (value >> 24) as u8;
+            // the colour to use
+            let colour = (value & 0xFFFFFF) as u32;
+            if let Err(e) = console.gfx_plot(x, y, colour) {
+                return neotron_api::Result::Err(e);
+            }
+            state.cursor_x = x;
+            state.cursor_y = y;
+            neotron_api::Result::Ok(0)
+        }
+        GFX_COMMAND_CHANGE_MODE => {
+            let video_mode = (value >> 32) as u8;
+            let Some(video_mode) = neotron_common_bios::video::Mode::try_from_u8(video_mode) else {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            };
+            let ptr = value as u32 as usize as *mut u32;
+            // change the video mode
+            if unsafe { console.change_mode(video_mode, ptr) }.is_err() {
+                return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
+            };
+            // reset our cursor on screen mode change
+            state.cursor_x = 0;
+            state.cursor_y = 0;
+            neotron_api::Result::Ok(0)
+        }
+        GFX_COMMAND_MOVE_CURSOR => {
+            let video_mode = console.get_mode();
+            let new_x = (value >> 48) as u16;
+            let new_y = (value >> 32) as u16;
+            if new_x >= video_mode.horizontal_pixels() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            }
+            if new_y >= video_mode.vertical_lines() {
+                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            }
+            state.cursor_x = new_x;
+            state.cursor_y = new_y;
+            neotron_api::Result::Ok(0)
+        }
+        GFX_COMMAND_DRAW_LINE => {
+            let new_x = (value >> 48) as u16;
+            let new_y = (value >> 32) as u16;
+            let colour = (value & 0xFFFFFF) as u32;
+            if let Err(e) =
+                console.gfx_draw_line(state.cursor_x, state.cursor_y, new_x, new_y, colour)
+            {
+                return neotron_api::Result::Err(e);
+            };
+            state.cursor_x = new_x;
+            state.cursor_y = new_y;
+            neotron_api::Result::Ok(0)
+        }
+        GFX_COMMAND_SET_PALETTE => {
+            // the console doesn't care about the palette so I guess we'll still
+            // do that here
+            let index = (value >> 24) as u8;
+            let rgb_packed = (value & 0xFFFFFF) as u32;
+            let api = crate::API.get();
+            let rgb_colour = neotron_common_bios::video::RGBColour::from_packed(rgb_packed);
+            (api.video_set_palette)(index, rgb_colour);
+            neotron_api::Result::Ok(0)
+        }
+        _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
+    }
+}
 
 // ===========================================================================
 // End of file

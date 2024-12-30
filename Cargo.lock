@@ -94,6 +94,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "desktop"
+version = "0.1.0"
+dependencies = [
+ "neotron-sdk",
+]
+
+[[package]]
 name = "embedded-hal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -170,6 +177,13 @@ name = "log"
 version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
+
+[[package]]
+name = "logo"
+version = "0.1.0"
+dependencies = [
+ "neotron-sdk",
+]
 
 [[package]]
 name = "menu"
@@ -277,11 +291,11 @@ dependencies = [
 [[package]]
 name = "neotron-sdk"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2043d6202942b6ebecbf02c95a0d1498bade2ffb287355af02fee6a5ab5de331"
+source = "git+https://github.com/neotron-compute/neotron-sdk.git?branch=add-gfx-ioctl-defines#645866224f5d4d74a8fc3884e4976a28be8b3b98"
 dependencies = [
  "crossterm",
  "neotron-api 0.2.0",
+ "neotron-common-bios",
  "neotron-ffi",
 ]
 
@@ -497,6 +511,13 @@ name = "utf8parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
+
+[[package]]
+name = "vidtest"
+version = "0.1.0"
+dependencies = [
+ "neotron-sdk",
+]
 
 [[package]]
 name = "vte"

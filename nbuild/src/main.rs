@@ -52,9 +52,23 @@ fn packages() -> Vec<nbuild::Package> {
         },
         // *** utilities ***
         nbuild::Package {
+            name: "desktop",
+            path: std::path::Path::new("./utilities/desktop/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/desktop"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
+        nbuild::Package {
             name: "flames",
             path: std::path::Path::new("./utilities/flames/Cargo.toml"),
             output_template: Some("./target/{target}/{profile}/flames"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
+        nbuild::Package {
+            name: "logo",
+            path: std::path::Path::new("./utilities/logo/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/logo"),
             kind: nbuild::PackageKind::Utility,
             testable: nbuild::Testable::No,
         },
@@ -69,6 +83,13 @@ fn packages() -> Vec<nbuild::Package> {
             name: "snake",
             path: std::path::Path::new("./utilities/snake/Cargo.toml"),
             output_template: Some("./target/{target}/{profile}/snake"),
+            kind: nbuild::PackageKind::Utility,
+            testable: nbuild::Testable::No,
+        },
+        nbuild::Package {
+            name: "vidtest",
+            path: std::path::Path::new("./utilities/vidtest/Cargo.toml"),
+            output_template: Some("./target/{target}/{profile}/vidtest"),
             kind: nbuild::PackageKind::Utility,
             testable: nbuild::Testable::No,
         },
@@ -133,10 +154,15 @@ fn binary(packages: &[nbuild::Package], start_address: &str, target: &str) {
         let package_output = package
             .output(target, "release")
             .expect("utilties should have an output");
-        let contents = match std::fs::read(&package_output) {
+        let stripped = package_output.clone() + ".stripped";
+        if let Err(e) = nbuild::strip_elf(&package_output, &stripped) {
+            eprintln!("Reading of {} failed: {}", stripped, e);
+            continue;
+        };
+        let contents = match std::fs::read(&stripped) {
             Ok(contents) => contents,
             Err(e) => {
-                eprintln!("Reading of {} failed: {}", package_output, e);
+                eprintln!("Reading of {} failed: {}", stripped, e);
                 continue;
             }
         };

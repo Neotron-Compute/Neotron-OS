@@ -2,7 +2,9 @@
 
 ## Unreleased changes ([Source](https://github.com/neotron-compute/neotron-os/tree/develop) | [Changes](https://github.com/neotron-compute/neotron-os/compare/v0.8.1...develop))
 
-* None
+* Add `GFX:` device and some ioctls for mode changing, plotting pixels and drawing lines
+* Add `nbuild` build system
+* Add a ROMFS containing `neoplay`, `snake`, `vidtest`, `logo` and `desktop` utilities / demos
 
 ## v0.8.1 - 2024-05-17 ([Source](https://github.com/neotron-compute/neotron-os/tree/v0.8.1) | [Release](https://github.com/neotron-compute/neotron-os/releases/tag/v0.8.1))
 
