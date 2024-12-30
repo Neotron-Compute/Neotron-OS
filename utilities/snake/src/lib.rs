@@ -42,7 +42,7 @@ impl App {
         self.clear_screen();
         self.title_screen();
 
-        let mut seed: u16 = 0x4f34;
+        let mut seed: u32 = 0x4f34;
 
         'outer: loop {
             'inner: loop {
@@ -419,8 +419,8 @@ impl Game {
         loop {
             // This isn't equally distributed. I don't really care.
             let pos = console::Position {
-                row: (neotron_sdk::rand() % self.height as u16) as u8,
-                col: (neotron_sdk::rand() % self.width as u16) as u8,
+                row: neotron_sdk::random_in(0..self.height as u32) as u8,
+                col: neotron_sdk::random_in(0..self.width as u32) as u8,
             };
             if self.board.is_empty(pos) {
                 return pos;

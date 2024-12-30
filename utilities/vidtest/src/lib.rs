@@ -70,6 +70,9 @@ pub fn main() -> i32 {
         if let Err(e) = radial(&handle, mode) {
             _ = writeln!(stdout, "Draw failure on radial: {:?}", e);
         }
+        if let Err(e) = random_lines(&handle, mode) {
+            _ = writeln!(stdout, "Draw failure on random_lines: {:?}", e);
+        }
     }
 
     0
@@ -241,6 +244,46 @@ fn radial(
     wait_for_key();
 
     Ok(())
+}
+
+/// plots some random lines, with all the colours
+fn random_lines(
+    handle: &neotron_sdk::File,
+    mode: neotron_sdk::VideoMode,
+) -> Result<(), neotron_sdk::Error> {
+    neotron_sdk::srand(1);
+
+    unsafe { handle.ioctl(neotron_sdk::ioctls::gfx::COMMAND_CLEAR_SCREEN, 0) }?;
+    let width_range = 0..mode.horizontal_pixels() as u32;
+    let height_range = 0..mode.vertical_lines() as u32;
+
+    while !kbhit() {
+        let x0 = neotron_sdk::random_in(width_range.clone());
+        let x1 = neotron_sdk::random_in(width_range.clone());
+        let y0 = neotron_sdk::random_in(height_range.clone());
+        let y1 = neotron_sdk::random_in(height_range.clone());
+        let colour = neotron_sdk::random_in(0..(1 << 24));
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_MOVE_CURSOR,
+                neotron_sdk::ioctls::gfx::move_cursor_value(x0 as u16, y0 as u16),
+            )
+        }?;
+        unsafe {
+            handle.ioctl(
+                neotron_sdk::ioctls::gfx::COMMAND_DRAW_LINE,
+                neotron_sdk::ioctls::gfx::draw_line_value(x1 as u16, y1 as u16, colour),
+            )
+        }?;
+    }
+
+    Ok(())
+}
+
+fn kbhit() -> bool {
+    let stdin = neotron_sdk::stdin();
+    let mut buffer = [0u8; 1];
+    stdin.read(&mut buffer) != Ok(0)
 }
 
 fn wait_for_key() {

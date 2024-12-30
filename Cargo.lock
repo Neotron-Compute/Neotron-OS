@@ -291,7 +291,7 @@ dependencies = [
 [[package]]
 name = "neotron-sdk"
 version = "0.2.0"
-source = "git+https://github.com/neotron-compute/neotron-sdk.git?branch=add-gfx-ioctl-defines#dc84465052e22328eb9526ba1edd93670228c5ee"
+source = "git+https://github.com/neotron-compute/neotron-sdk.git?branch=add-gfx-ioctl-defines#645866224f5d4d74a8fc3884e4976a28be8b3b98"
 dependencies = [
  "crossterm",
  "neotron-api 0.2.0",
