@@ -870,39 +870,11 @@ fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Res
     match command {
         GFX_COMMAND_CLEAR_SCREEN => {
             let colour = (value & 0xFFFFFF) as u32;
-            let fb_ptr = console.get_fb();
-            let video_mode = console.get_mode();
-            let pixel_byte = match video_mode.format() {
-                // neotron_common_bios::video::Format::Chunky32 unsupported
-                // neotron_common_bios::video::Format::Chunky16 unsupported
-                neotron_common_bios::video::Format::Chunky8 => colour as u8,
-                neotron_common_bios::video::Format::Chunky4 => {
-                    let nibble = (colour as u8) & 0x0F;
-                    nibble << 4 | nibble
-                }
-                neotron_common_bios::video::Format::Chunky2 => {
-                    let pair = (colour as u8) & 0x03;
-                    pair << 6 | pair << 4 | pair << 2 | pair
-                }
-                neotron_common_bios::video::Format::Chunky1 => {
-                    let bit = (colour as u8) & 0x01;
-                    if bit != 0 {
-                        0xFF
-                    } else {
-                        0x00
-                    }
-                }
-                _ => return neotron_api::Result::Err(neotron_api::Error::BadHandle),
-            };
-            for y in 0..video_mode.vertical_lines() {
-                let line_start =
-                    unsafe { fb_ptr.byte_add(video_mode.line_size_bytes() * (y as usize)) }
-                        as *mut u8;
-                unsafe {
-                    line_start.write_bytes(pixel_byte, video_mode.line_size_bytes());
-                }
+            if let Err(e) = console.gfx_clear(colour) {
+                Err(e).into()
+            } else {
+                Ok(0).into()
             }
-            Ok(0).into()
         }
         GFX_COMMAND_CHUNKY_PLOT => {
             // the position on screen
@@ -913,34 +885,11 @@ fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Res
             let _mode = (value >> 24) as u8;
             // the colour to use
             let colour = (value & 0xFFFFFF) as u32;
-            let fb_ptr = console.get_fb();
-            let video_mode = console.get_mode();
-            if x >= video_mode.horizontal_pixels() {
-                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
+            if let Err(e) = console.gfx_plot(x, y, colour) {
+                return neotron_api::Result::Err(e);
             }
-            if y >= video_mode.vertical_lines() {
-                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
-            }
-            if fb_ptr.is_null() {
-                return neotron_api::Result::Err(neotron_api::Error::NotFound);
-            }
-            // our video line starts here
-            let line_start =
-                unsafe { fb_ptr.byte_add(video_mode.line_size_bytes() * (y as usize)) } as *mut u8;
-            let chunky_plot_func = match video_mode.format() {
-                // neotron_common_bios::video::Format::Chunky32 unsupported
-                // neotron_common_bios::video::Format::Chunky16 unsupported
-                neotron_common_bios::video::Format::Chunky8 => chunky_plot::<8>,
-                neotron_common_bios::video::Format::Chunky4 => chunky_plot::<4>,
-                neotron_common_bios::video::Format::Chunky2 => chunky_plot::<2>,
-                neotron_common_bios::video::Format::Chunky1 => chunky_plot::<1>,
-                _ => {
-                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
-                }
-            };
-            unsafe {
-                chunky_plot_func(line_start, x, colour);
-            }
+            state.cursor_x = x;
+            state.cursor_y = y;
             neotron_api::Result::Ok(0)
         }
         GFX_COMMAND_CHANGE_MODE => {
@@ -953,7 +902,7 @@ fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Res
             if unsafe { console.change_mode(video_mode, ptr) }.is_err() {
                 return neotron_api::Result::Err(neotron_api::Error::DeviceSpecific);
             };
-            // reset cursor on screen mode change
+            // reset our cursor on screen mode change
             state.cursor_x = 0;
             state.cursor_y = 0;
             neotron_api::Result::Ok(0)
@@ -973,47 +922,21 @@ fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Res
             neotron_api::Result::Ok(0)
         }
         GFX_COMMAND_DRAW_LINE => {
-            let video_mode = console.get_mode();
-            let fb_ptr = console.get_fb();
-            let stride = video_mode.line_size_bytes();
             let new_x = (value >> 48) as u16;
             let new_y = (value >> 32) as u16;
             let colour = (value & 0xFFFFFF) as u32;
-            if new_x >= video_mode.horizontal_pixels() {
-                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
-            }
-            if new_y >= video_mode.vertical_lines() {
-                return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
-            }
-            // Adapted from https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm#All_cases
-            let plot_line_func = match video_mode.format() {
-                // neotron_common_bios::video::Format::Chunky32 unsupported
-                // neotron_common_bios::video::Format::Chunky16 unsupported
-                neotron_common_bios::video::Format::Chunky8 => plot_line::<8>,
-                neotron_common_bios::video::Format::Chunky4 => plot_line::<4>,
-                neotron_common_bios::video::Format::Chunky2 => plot_line::<2>,
-                neotron_common_bios::video::Format::Chunky1 => plot_line::<1>,
-                _ => {
-                    return neotron_api::Result::Err(neotron_api::Error::InvalidArg);
-                }
+            if let Err(e) =
+                console.gfx_draw_line(state.cursor_x, state.cursor_y, new_x, new_y, colour)
+            {
+                return neotron_api::Result::Err(e);
             };
-            unsafe {
-                plot_line_func(
-                    fb_ptr as *mut u8,
-                    stride,
-                    state.cursor_x as i16,
-                    state.cursor_y as i16,
-                    new_x as i16,
-                    new_y as i16,
-                    colour,
-                )
-            }
-
             state.cursor_x = new_x;
             state.cursor_y = new_y;
             neotron_api::Result::Ok(0)
         }
         GFX_COMMAND_SET_PALETTE => {
+            // the console doesn't care about the palette so I guess we'll still
+            // do that here
             let index = (value >> 24) as u8;
             let rgb_packed = (value & 0xFFFFFF) as u32;
             let api = crate::API.get();
@@ -1022,242 +945,6 @@ fn ioctl_gfx(state: &mut GfxState, command: u64, value: u64) -> neotron_api::Res
             neotron_api::Result::Ok(0)
         }
         _ => neotron_api::Result::Err(neotron_api::Error::InvalidArg),
-    }
-}
-
-/// Plot a line
-///
-/// # Safety
-///
-/// Ensure `fb_ptr` points to a buffer that is at least `stride * (y_max + 1)`
-/// bytes long, where `y_max` is the larger of `y0` and `y1`.
-unsafe fn plot_line<const BPP: u8>(
-    fb_ptr: *mut u8,
-    stride: usize,
-    mut x0: i16,
-    mut y0: i16,
-    x1: i16,
-    y1: i16,
-    colour: u32,
-) {
-    let dx = x1.abs_diff(x0) as i16;
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let dy = -(y1.abs_diff(y0) as i16);
-    let sy = if y0 < y1 { 1 } else { -1 };
-    let line_offset = if y0 < y1 {
-        stride as isize
-    } else {
-        -(stride as isize)
-    };
-    let mut error = dx + dy;
-    let mut line_start = unsafe { fb_ptr.add(stride * y0 as usize) };
-    loop {
-        chunky_plot::<BPP>(line_start, x0 as u16, colour);
-        if x0 == x1 && y0 == y1 {
-            break;
-        }
-        let e2 = error * 2;
-        if e2 >= dy {
-            error += dy;
-            x0 += sx;
-        }
-        if e2 <= dx {
-            error += dx;
-            y0 += sy;
-            line_start = line_start.offset(line_offset);
-        }
-    }
-}
-
-/// Plot a single pixel.
-///
-/// # Safety
-///
-/// Ensure `line_start` points to a buffer that is at least `x * BPP / 8` bytes long.
-unsafe fn chunky_plot<const BPP: u8>(line_start: *mut u8, x: u16, colour: u32) {
-    // this is 8, 4, 2 or 1
-    let pixels_per_byte = 8 / BPP;
-    // pick a byte in the line
-    let byte_ptr = unsafe { line_start.add(x as usize / pixels_per_byte as usize) };
-    // load the byte
-    let mut byte = unsafe { byte_ptr.read() };
-    // this is pixels_per_byte-1 to 0, because the left hand pixel has the upper-most bits
-    let pixel_in_byte = (pixels_per_byte - 1) - (x % pixels_per_byte as u16) as u8;
-    // This is 2, 4, 16 or 256
-    let num_colours = (1 << BPP) as u32;
-    // this is 0b1, 0b11, 0xF or 0xFF
-    let pixel_mask = num_colours - 1;
-    // this marks the pixels of interest
-    let shifted_pixel_mask = (pixel_mask << (pixel_in_byte * BPP)) as u8;
-    // cap the colour
-    let shifted_new_colour = ((colour & pixel_mask) << (pixel_in_byte * BPP)) as u8;
-    // zero out the old colour
-    byte &= !shifted_pixel_mask;
-    // set the new colour
-    byte |= shifted_new_colour;
-    // write it back
-    unsafe {
-        byte_ptr.write(byte);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn chunky1_test() {
-        let mut buffer = vec![0x00u8; (640 / 8) + 1];
-
-        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 0, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b1000_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 1, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b1100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 8, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 15, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b1100_0000, 0b1000_0001, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<1>(buffer.as_mut_ptr(), 15, 0) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b1100_0000, 0b1000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-    }
-
-    #[test]
-    fn chunky2_test() {
-        let mut buffer = vec![0x00u8; (640 / 4) + 1];
-
-        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 0, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0100_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 1, 2) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0110_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 1, 3) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0111_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 4, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0111_0000, 0b0100_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<2>(buffer.as_mut_ptr(), 7, 3) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0111_0000, 0b0100_0011, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-    }
-
-    #[test]
-    fn chunky4_test() {
-        let mut buffer = vec![0x00u8; (640 / 2) + 1];
-
-        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 0, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0001_0000, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 1, 2) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0001_0010, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 1, 3) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0001_0011, 0b0000_0000, 0b0000_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 4, 1) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_0000],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-
-        _ = unsafe { chunky_plot::<4>(buffer.as_mut_ptr(), 7, 15) };
-        assert_eq!(
-            &buffer[0..4],
-            [0b0001_0011, 0b0000_0000, 0b0001_0000, 0b0000_1111],
-            "Got {:02x?}",
-            &buffer[0..4]
-        );
-    }
-
-    #[test]
-    fn chunky8_test() {
-        let mut buffer = vec![0x00u8; 641];
-
-        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 0, 1) };
-        assert_eq!(&buffer[0..4], [1, 0, 0, 0]);
-
-        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 1, 2) };
-        assert_eq!(&buffer[0..4], [1, 2, 0, 0]);
-
-        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 1, 255) };
-        assert_eq!(&buffer[0..4], [1, 255, 0, 0]);
-
-        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 3, 127) };
-        assert_eq!(&buffer[0..4], [1, 255, 0, 127],);
-
-        _ = unsafe { chunky_plot::<8>(buffer.as_mut_ptr(), 3, 255) };
-        assert_eq!(&buffer[0..4], [1, 255, 0, 255],);
     }
 }
 
